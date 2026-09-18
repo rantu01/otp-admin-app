@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Professional admin palette (light) — matches user-app family -->
+    <color name="screen_bg">#EDE7F6</color>
+    <color name="card_bg">#FFFFFF</color>
+    <color name="title_text">#2D2A4A</color>
+    <color name="muted_text">#6B7280</color>
+    <color name="stroke">#E2E0F0</color>
+    <color name="accent_blue">#6C3CE0</color>
+    <color name="accent_pink">#E040FB</color>
+    <color name="info_bg">#F3EFFF</color>
+    <color name="success">#00A152</color>
+    <color name="error">#E53935</color>
+    <color name="danger">#E53935</color>
+    <color name="header_start">#7C4DFF</color>
+    <color name="header_end">#E040FB</color>
+    <color name="tab_active">#6C3CE0</color>
+    <color name="input_hint">#8A8F98</color>
+
+    <!-- Status pills -->
+    <color name="pill_pending_bg">#FEF3C7</color>
+    <color name="pill_pending_text">#92400E</color>
+    <color name="pill_ok_bg">#D1FAE5</color>
+    <color name="pill_ok_text">#065F46</color>
+    <color name="pill_bad_bg">#FEE2E2</color>
+    <color name="pill_bad_text">#991B1B</color>
+</resources>

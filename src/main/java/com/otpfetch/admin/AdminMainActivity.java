@@ -6,11 +6,13 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
+import android.util.TypedValue;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -20,10 +22,13 @@ import android.widget.Toast;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -46,6 +51,7 @@ public class AdminMainActivity extends AppCompatActivity {
     private String tab = "dashboard";
     private int lastPending = 0;
     private JSONArray cachePackages = new JSONArray();
+    private final List<Button> navButtons = new ArrayList<>();
 
     private final Runnable poller = new Runnable() {
         @Override public void run() {
@@ -82,12 +88,20 @@ public class AdminMainActivity extends AppCompatActivity {
             Button b = new Button(this);
             b.setText(t.toUpperCase());
             b.setTextSize(11);
+            b.setTag(t);
             b.setOnClickListener(v -> {
                 tab = t;
+                refreshNav();
                 render();
             });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            lp.setMargins(0, 0, dp(8), 0);
+            b.setLayoutParams(lp);
+            navButtons.add(b);
             nav.addView(b);
         }
+        refreshNav();
         refreshBtn.setOnClickListener(v -> render());
         logoutBtn.setOnClickListener(v -> {
             AdminSession.logout(this);
@@ -157,11 +171,31 @@ public class AdminMainActivity extends AppCompatActivity {
         }
     }
 
+    private int dp(int v) {
+        return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics());
+    }
+
+    /** Theme-aware card: uses @drawable/bg_card so light/dark both keep contrast. */
+    private void styleCard(LinearLayout card) {
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16), dp(16), dp(16), dp(16));
+        card.setBackground(ContextCompat.getDrawable(this, R.drawable.bg_card));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, 0, 0, dp(12));
+        card.setLayoutParams(lp);
+    }
+
     private TextView tv(String s) {
         TextView t = new TextView(this);
         t.setText(s);
-        t.setPadding(12, 12, 12, 12);
-        t.setBackgroundColor(0xFFFFFFFF);
+        t.setTextSize(14);
+        t.setPadding(dp(16), dp(16), dp(16), dp(16));
+        t.setBackground(ContextCompat.getDrawable(this, R.drawable.bg_card));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, 0, 0, dp(12));
+        t.setLayoutParams(lp);
         return t;
     }
 
@@ -170,6 +204,68 @@ public class AdminMainActivity extends AppCompatActivity {
         b.setText(s);
         b.setTextSize(12);
         return b;
+    }
+
+    /** Active tab = filled primary, inactive = card surface with primary text. */
+    private void refreshNav() {
+        for (Button b : navButtons) {
+            boolean active = tab.equals(b.getTag());
+            if (active) {
+                b.setBackgroundTintList(ContextCompat.getColorStateList(this, R.color.tab_active));
+                b.setTextColor(0xFFFFFFFF);
+            } else {
+                b.setBackgroundTintList(ContextCompat.getColorStateList(this, R.color.card_bg));
+                b.setTextColor(ContextCompat.getColor(this, R.color.tab_active));
+            }
+        }
+    }
+
+    private void styleApprove(Button b) {
+        b.setBackgroundTintList(ContextCompat.getColorStateList(this, R.color.success));
+        b.setTextColor(0xFFFFFFFF);
+    }
+
+    private void styleReject(Button b) {
+        b.setBackgroundTintList(ContextCompat.getColorStateList(this, R.color.danger));
+        b.setTextColor(0xFFFFFFFF);
+    }
+
+    private void styleNeutral(Button b) {
+        b.setBackgroundTintList(ContextCompat.getColorStateList(this, R.color.info_bg));
+        b.setTextColor(ContextCompat.getColor(this, R.color.title_text));
+    }
+
+    /** Small rounded status pill (PENDING amber / APPROVED green / REJECTED red). */
+    private TextView statusPill(String status) {
+        TextView p = new TextView(this);
+        p.setText(status == null || status.isEmpty() ? "—" : status);
+        p.setTextSize(11);
+        p.setTypeface(null, android.graphics.Typeface.BOLD);
+        p.setPadding(dp(10), dp(5), dp(10), dp(5));
+        int bg, fg;
+        if ("APPROVED".equals(status) || "active".equals(status) || "ON".equals(status)) {
+            bg = R.color.pill_ok_bg; fg = R.color.pill_ok_text;
+        } else if ("REJECTED".equals(status) || "inactive".equals(status) || "OFF".equals(status)) {
+            bg = R.color.pill_bad_bg; fg = R.color.pill_bad_text;
+        } else {
+            bg = R.color.pill_pending_bg; fg = R.color.pill_pending_text;
+        }
+        GradientDrawable d = new GradientDrawable();
+        d.setShape(GradientDrawable.RECTANGLE);
+        d.setCornerRadius(dp(50));
+        d.setColor(ContextCompat.getColor(this, bg));
+        p.setBackground(d);
+        p.setTextColor(ContextCompat.getColor(this, fg));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, dp(8), 0, 0);
+        p.setLayoutParams(lp);
+        return p;
+    }
+
+    private static String safeDate(String s) {
+        if (s == null) return "—";
+        return s.length() >= 10 ? s.substring(0, 10) : s;
     }
 
     private void copy(String label, String text) {
@@ -245,35 +341,35 @@ public class AdminMainActivity extends AppCompatActivity {
                     for (int i = 0; i < list.length(); i++) {
                         JSONObject p = list.optJSONObject(i);
                         LinearLayout card = new LinearLayout(this);
-                        card.setOrientation(LinearLayout.VERTICAL);
-                        card.setPadding(12, 12, 12, 12);
-                        card.setBackgroundColor(0xFFF3EFFF);
+                        styleCard(card);
                         TextView t = new TextView(this);
                         t.setText("#" + p.optInt("id") + " " + p.optString("userName") + " (ID " + p.optInt("userId") + ")"
                                 + "\n" + p.optString("packageName") + " ৳" + p.optInt("amount")
                                 + " via " + p.optString("paymentMethodName") + " (" + p.optString("walletNumber") + ")"
                                 + "\nTxID: " + p.optString("transactionId")
-                                + "\nStatus: " + p.optString("status") + " · " + p.optString("submittedAt", "").substring(0, 10));
+                                + "\nSubmitted: " + safeDate(p.optString("submittedAt", "")));
+                        t.setTextSize(14);
                         card.addView(t);
+                        card.addView(statusPill(p.optString("status")));
                         LinearLayout row = new LinearLayout(this);
                         row.setOrientation(LinearLayout.HORIZONTAL);
+                        row.setPadding(0, dp(10), 0, 0);
                         Button c = btn("Copy TxID");
+                        styleNeutral(c);
                         c.setOnClickListener(v -> copy("txid", p.optString("transactionId")));
                         row.addView(c);
                         if ("PENDING".equals(p.optString("status"))) {
                             Button a = btn("Approve");
+                            styleApprove(a);
                             a.setOnClickListener(v -> confirm("Approve payment #" + p.optInt("id") + "?", () -> review(p.optInt("id"), true, null)));
                             Button rj = btn("Reject");
+                            styleReject(rj);
                             rj.setOnClickListener(v -> askReason(p.optInt("id")));
                             row.addView(a);
                             row.addView(rj);
                         }
                         card.addView(row);
                         content.addView(card);
-                        TextView sep = new TextView(this);
-                        sep.setText("");
-                        sep.setHeight(12);
-                        content.addView(sep);
                     }
                 });
             } catch (Exception e) {
@@ -340,22 +436,31 @@ public class AdminMainActivity extends AppCompatActivity {
                     for (int i = 0; i < list.length(); i++) {
                         JSONObject u = list.optJSONObject(i);
                         LinearLayout card = new LinearLayout(this);
-                        card.setOrientation(LinearLayout.VERTICAL);
-                        card.setPadding(12, 12, 12, 12);
-                        card.setBackgroundColor(0xFFFFFFFF);
+                        styleCard(card);
                         TextView t = new TextView(this);
+                        t.setTextSize(14);
                         t.setText(u.optString("name") + " · ID " + u.optInt("id")
                                 + "\n" + u.optString("email", "") + u.optString("phone", "")
-                                + "\nStatus: " + u.optString("status") + " · access: " + (u.optBoolean("accessEnabled", true) ? "ON" : "OFF")
                                 + "\nPackage: " + u.optString("currentPackageName", "—")
                                 + "\nStart: " + u.optString("packageStartDate", "—")
                                 + "\nExpiry: " + u.optString("packageExpireDate", "—"));
                         card.addView(t);
+                        LinearLayout statusRow = new LinearLayout(this);
+                        statusRow.setOrientation(LinearLayout.HORIZONTAL);
+                        statusRow.addView(statusPill(u.optString("status")));
+                        TextView gap = new TextView(this);
+                        gap.setText("  ");
+                        statusRow.addView(gap);
+                        statusRow.addView(statusPill(u.optBoolean("accessEnabled", true) ? "ON" : "OFF"));
+                        card.addView(statusRow);
                         LinearLayout row = new LinearLayout(this);
                         row.setOrientation(LinearLayout.HORIZONTAL);
+                        row.setPadding(0, dp(10), 0, 0);
                         Button tog = btn(u.optBoolean("accessEnabled", true) ? "Disable" : "Enable");
+                        if (u.optBoolean("accessEnabled", true)) styleReject(tog); else styleApprove(tog);
                         tog.setOnClickListener(v -> setAccess(u.optInt("id"), !u.optBoolean("accessEnabled", true)));
                         Button assign = btn("Assign pkg");
+                        styleNeutral(assign);
                         assign.setOnClickListener(v -> askAssign(u.optInt("id")));
                         row.addView(tog);
                         row.addView(assign);
@@ -439,13 +544,19 @@ public class AdminMainActivity extends AppCompatActivity {
                     for (int i = 0; i < list.length(); i++) {
                         JSONObject p = list.optJSONObject(i);
                         LinearLayout card = new LinearLayout(this);
-                        card.setOrientation(LinearLayout.VERTICAL);
-                        card.setPadding(12, 12, 12, 12);
-                        card.setBackgroundColor(0xFFFFFFFF);
+                        styleCard(card);
                         TextView t = new TextView(this);
-                        t.setText(p.optString("name") + "\n৳" + p.optInt("price") + " · " + p.optInt("durationDays") + " days · " + p.optString("status"));
+                        t.setTextSize(15);
+                        t.setTypeface(null, android.graphics.Typeface.BOLD);
+                        t.setText(p.optString("name") + "\n৳" + p.optInt("price") + " · " + p.optInt("durationDays") + " days");
                         card.addView(t);
+                        card.addView(statusPill(p.optString("status")));
                         Button tog = btn("active".equals(p.optString("status")) ? "Deactivate" : "Activate");
+                        if ("active".equals(p.optString("status"))) styleReject(tog); else styleApprove(tog);
+                        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+                        tlp.setMargins(0, dp(10), 0, 0);
+                        tog.setLayoutParams(tlp);
                         tog.setOnClickListener(v -> togglePackage(p));
                         card.addView(tog);
                         content.addView(card);
@@ -518,19 +629,22 @@ public class AdminMainActivity extends AppCompatActivity {
                     for (int i = 0; i < list.length(); i++) {
                         JSONObject m = list.optJSONObject(i);
                         LinearLayout card = new LinearLayout(this);
-                        card.setOrientation(LinearLayout.VERTICAL);
-                        card.setPadding(12, 12, 12, 12);
-                        card.setBackgroundColor(0xFFFFFFFF);
+                        styleCard(card);
                         TextView t = new TextView(this);
+                        t.setTextSize(14);
                         t.setText(m.optString("name") + " · " + m.optString("walletNumber")
-                                + " (" + m.optString("accountType", "") + ") · " + m.optString("status")
+                                + " (" + m.optString("accountType", "") + ")"
                                 + "\n" + m.optString("instructions", ""));
                         card.addView(t);
+                        card.addView(statusPill(m.optString("status")));
                         LinearLayout row = new LinearLayout(this);
                         row.setOrientation(LinearLayout.HORIZONTAL);
+                        row.setPadding(0, dp(10), 0, 0);
                         Button tog = btn("active".equals(m.optString("status")) ? "Deactivate" : "Activate");
+                        if ("active".equals(m.optString("status"))) styleReject(tog); else styleApprove(tog);
                         tog.setOnClickListener(v -> toggleMethod(m));
                         Button edit = btn("Edit number");
+                        styleNeutral(edit);
                         edit.setOnClickListener(v -> editMethod(m));
                         row.addView(tog);
                         row.addView(edit);

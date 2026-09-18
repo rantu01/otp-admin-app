@@ -8,6 +8,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 
 import org.json.JSONObject;
 
@@ -44,6 +45,7 @@ public class AdminAuthActivity extends AppCompatActivity {
             }
             AdminSession.setBase(this, base);
             hint.setText("Logging in...");
+            hint.setTextColor(ContextCompat.getColor(this, R.color.muted_text));
             net.execute(() -> {
                 try {
                     JSONObject body = new JSONObject();
@@ -53,7 +55,10 @@ public class AdminAuthActivity extends AppCompatActivity {
                     if (!r.ok()) throw new Exception(r.json.optString("error", "Login failed"));
                     JSONObject user = r.json.optJSONObject("user");
                     if (user == null || !"admin".equals(user.optString("role"))) {
-                        runOnUiThread(() -> hint.setText("Not an admin account."));
+                        runOnUiThread(() -> {
+                            hint.setText("Not an admin account.");
+                            hint.setTextColor(ContextCompat.getColor(this, R.color.danger));
+                        });
                         return;
                     }
                     AdminSession.save(this, r.json.optString("token", ""), user);
@@ -72,7 +77,10 @@ public class AdminAuthActivity extends AppCompatActivity {
                         finish();
                     });
                 } catch (Exception e) {
-                    runOnUiThread(() -> hint.setText("Error: " + e.getMessage()));
+                    runOnUiThread(() -> {
+                        hint.setText("Error: " + e.getMessage());
+                        hint.setTextColor(ContextCompat.getColor(this, R.color.danger));
+                    });
                 }
             });
         });

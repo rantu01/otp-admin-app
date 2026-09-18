@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Professional admin palette (dark) — same keys, night-tuned -->
+    <color name="screen_bg">#14101F</color>
+    <color name="card_bg">#221C38</color>
+    <color name="title_text">#EDE7F6</color>
+    <color name="muted_text">#A1A1AA</color>
+    <color name="stroke">#3A3355</color>
+    <color name="accent_blue">#B388FF</color>
+    <color name="accent_pink">#EA80FC</color>
+    <color name="info_bg">#2E2650</color>
+    <color name="success">#69F0AE</color>
+    <color name="error">#FF8A80</color>
+    <color name="danger">#FF8A80</color>
+    <color name="header_start">#7C4DFF</color>
+    <color name="header_end">#E040FB</color>
+    <color name="tab_active">#B388FF</color>
+    <color name="input_hint">#9AA0A6</color>
+
+    <!-- Status pills -->
+    <color name="pill_pending_bg">#453204</color>
+    <color name="pill_pending_text">#FCD34D</color>
+    <color name="pill_ok_bg">#064E3B</color>
+    <color name="pill_ok_text">#6EE7B7</color>
+    <color name="pill_bad_bg">#7F1D1D</color>
+    <color name="pill_bad_text">#FCA5A5</color>
+</resources>
