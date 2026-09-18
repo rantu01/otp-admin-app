@@ -76,6 +76,10 @@ public final class AdminApi {
         return call(ctx, "PATCH", path, body == null ? new JSONObject() : body);
     }
 
+    public static Resp delete(Context ctx, String path) throws Exception {
+        return call(ctx, "DELETE", path, null);
+    }
+
     public static String qs(String... kv) {
         try {
             StringBuilder sb = new StringBuilder();

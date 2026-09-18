@@ -2,20 +2,29 @@ package com.otpfetch.admin;
 
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.drawable.GradientDrawable;
+import android.media.RingtoneManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.text.InputType;
 import android.util.TypedValue;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TableLayout;
+import android.widget.TableRow;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -52,6 +61,8 @@ public class AdminMainActivity extends AppCompatActivity {
     private int lastPending = 0;
     private JSONArray cachePackages = new JSONArray();
     private final List<Button> navButtons = new ArrayList<>();
+    // Table View / Card View toggle (payments + users + withdrawals). Persists per session.
+    private String payViewMode = "card";
 
     private final Runnable poller = new Runnable() {
         @Override public void run() {
@@ -83,7 +94,7 @@ public class AdminMainActivity extends AppCompatActivity {
         Button refreshBtn = findViewById(R.id.refreshBtn);
         Button logoutBtn = findViewById(R.id.logoutBtn);
         LinearLayout nav = findViewById(R.id.navRow);
-        String[] tabs = {"dashboard", "payments", "users", "packages", "methods", "versions"};
+        String[] tabs = {"dashboard", "profit", "withdraw", "payments", "users", "packages", "methods", "versions"};
         for (String t : tabs) {
             Button b = new Button(this);
             b.setText(t.toUpperCase());
@@ -109,6 +120,7 @@ public class AdminMainActivity extends AppCompatActivity {
             finish();
         });
         ensureChannel();
+        requestNotifPermission();
         render();
         pollHandler.post(poller);
     }
@@ -133,23 +145,59 @@ public class AdminMainActivity extends AppCompatActivity {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-                if (nm != null) nm.createNotificationChannel(
-                        new NotificationChannel(CH, "Admin payments", NotificationManager.IMPORTANCE_HIGH));
+                if (nm != null) {
+                    Uri sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+                    android.media.AudioAttributes attrs = new android.media.AudioAttributes.Builder()
+                            .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build();
+                    NotificationChannel ch = new NotificationChannel(CH, "Admin payments", NotificationManager.IMPORTANCE_HIGH);
+                    ch.setDescription("New payment / withdrawal alerts with sound");
+                    try { ch.setSound(sound, attrs); } catch (Exception ignored) {}
+                    try { ch.enableVibration(true); } catch (Exception ignored) {}
+                    nm.createNotificationChannel(ch);
+                }
             }
         } catch (Exception ignored) {}
     }
 
-    /** Local alert when a new payment arrives (works in background while process lives; enable FCM key server-side for killed-app push). */
+    private void requestNotifPermission() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 9002);
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    /** Audible + visible alert; tapping opens the payments tab. Works in background while the process lives. */
     private void notifyNewPayment(int pending) {
         try {
+            Intent open = new Intent(this, AdminMainActivity.class);
+            open.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            PendingIntent pi = PendingIntent.getActivity(this, 9001, open,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            Uri sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
             NotificationCompat.Builder b = new NotificationCompat.Builder(this, CH)
                     .setContentTitle("New payment received for verification")
                     .setContentText(pending + " pending payment(s) — tap to review")
                     .setSmallIcon(android.R.drawable.stat_sys_warning)
                     .setPriority(NotificationCompat.PRIORITY_HIGH)
-                    .setAutoCancel(true);
+                    .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                    .setSound(sound)
+                    .setDefaults(NotificationCompat.DEFAULT_VIBRATE | NotificationCompat.DEFAULT_LIGHTS)
+                    .setAutoCancel(true)
+                    .setContentIntent(pi);
             NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm != null) nm.notify(9001, b.build());
+            try {
+                Vibrator vib = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+                if (vib != null && vib.hasVibrator()) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) vib.vibrate(VibrationEffect.createOneShot(400, VibrationEffect.DEFAULT_AMPLITUDE));
+                    else vib.vibrate(400);
+                }
+            } catch (Exception ignored) {}
             Toast.makeText(this, "New payment received for verification", Toast.LENGTH_LONG).show();
         } catch (Exception ignored) {}
     }
@@ -163,6 +211,8 @@ public class AdminMainActivity extends AppCompatActivity {
         content.addView(loading);
         switch (tab) {
             case "payments": renderPayments("PENDING", ""); break;
+            case "profit": renderProfit(); break;
+            case "withdraw": renderWithdraw(); break;
             case "users": renderUsers(""); break;
             case "packages": renderPackages(); break;
             case "methods": renderMethods(); break;
@@ -243,7 +293,7 @@ public class AdminMainActivity extends AppCompatActivity {
         p.setTypeface(null, android.graphics.Typeface.BOLD);
         p.setPadding(dp(10), dp(5), dp(10), dp(5));
         int bg, fg;
-        if ("APPROVED".equals(status) || "active".equals(status) || "ON".equals(status)) {
+        if ("APPROVED".equals(status) || "active".equals(status) || "ON".equals(status) || "FREE".equals(status) || "free".equals(status)) {
             bg = R.color.pill_ok_bg; fg = R.color.pill_ok_text;
         } else if ("REJECTED".equals(status) || "inactive".equals(status) || "OFF".equals(status)) {
             bg = R.color.pill_bad_bg; fg = R.color.pill_bad_text;
@@ -289,6 +339,7 @@ public class AdminMainActivity extends AppCompatActivity {
                 }
                 if (!r.ok()) throw new Exception(r.json.optString("error", "Failed"));
                 JSONObject s = r.json.optJSONObject("stats");
+                JSONObject profit = r.json.optJSONObject("profit");
                 main.post(() -> {
                     content.removeAllViews();
                     content.addView(tv("Total Payments: " + s.optInt("totalPayments")
@@ -299,6 +350,7 @@ public class AdminMainActivity extends AppCompatActivity {
                             + "\nActive Subscriptions: " + s.optInt("activeSubscriptions")
                             + "\nExpired: " + s.optInt("expiredSubscriptions")
                             + "\nTotal Users: " + s.optInt("totalUsers")));
+                    if (profit != null) content.addView(tv(profitSummaryText(profit)));
                     lastPending = s.optInt("pending", lastPending);
                     pendingBadge.setText("Pending: " + s.optInt("pending"));
                 });
@@ -309,6 +361,181 @@ public class AdminMainActivity extends AppCompatActivity {
                 });
             }
         });
+    }
+
+    // ---------------- profit & withdrawals (transparent split ledger) ----------------
+    private String profitSummaryText(JSONObject p) {
+        if (p == null) return "Profit: —";
+        StringBuilder sb = new StringBuilder();
+        sb.append("Daily Profit: ৳").append(p.optInt("daily"))
+          .append("\nWeekly Profit: ৳").append(p.optInt("weekly"))
+          .append("\nTotal Earned: ৳").append(p.optInt("total"))
+          .append("\nWithdrawn: ৳").append(p.optInt("withdrawnTotal"))
+          .append(" (").append(p.optInt("withdrawalCount")).append(")")
+          .append("\nRemaining Available: ৳").append(p.optInt("remaining"));
+        JSONArray people = p.optJSONArray("people");
+        if (people != null) {
+            for (int i = 0; i < people.length(); i++) {
+                JSONObject x = people.optJSONObject(i);
+                sb.append("\n").append(x.optString("name")).append(" (").append(x.optInt("pct")).append("%)")
+                  .append(": entitled ৳").append(x.optDouble("totalEntitled"))
+                  .append(" · now ৳").append(x.optDouble("withdrawableNow"));
+            }
+        }
+        return sb.toString();
+    }
+
+    private void renderProfit() {
+        net.execute(() -> {
+            try {
+                AdminApi.Resp r = AdminApi.get(this, "/api/admin/profits");
+                if (!r.ok()) throw new Exception(r.json.optString("error", "Failed"));
+                JSONObject profit = r.json.optJSONObject("profit");
+                main.post(() -> {
+                    content.removeAllViews();
+                    content.addView(tv(profitSummaryText(profit)));
+                    content.addView(tv("Profit = APPROVED payments only. Withdrawals deduct from Remaining. Split: Alamin 20% · Rantu 40% · Rony 40%."));
+                });
+            } catch (Exception e) {
+                main.post(() -> { content.removeAllViews(); content.addView(tv("Offline: " + e.getMessage())); });
+            }
+        });
+    }
+
+    private void renderWithdraw() {
+        net.execute(() -> {
+            try {
+                AdminApi.Resp r = AdminApi.get(this, "/api/admin/withdrawals");
+                if (!r.ok()) throw new Exception(r.json.optString("error", "Failed"));
+                JSONObject profit = r.json.optJSONObject("profit");
+                JSONArray arr = r.json.optJSONArray("withdrawals");
+                if (arr == null) arr = new JSONArray();
+                final JSONArray list = arr;
+                final JSONObject pf = profit;
+                main.post(() -> {
+                    content.removeAllViews();
+                    content.addView(tv(profitSummaryText(pf)));
+                    // New withdrawal form (person + phone + amount + note)
+                    LinearLayout f = new LinearLayout(this);
+                    f.setOrientation(LinearLayout.VERTICAL);
+                    styleCard(f);
+                    TextView h = new TextView(this);
+                    h.setText("New withdrawal (deducts from Remaining)");
+                    h.setTypeface(null, android.graphics.Typeface.BOLD);
+                    f.addView(h);
+                    EditText person = new EditText(this); person.setHint("Person: alamin / rantu / rony");
+                    EditText phone = new EditText(this); phone.setHint("Receiver phone (optional)"); phone.setInputType(InputType.TYPE_CLASS_PHONE);
+                    EditText amount = new EditText(this); amount.setHint("Amount ৳"); amount.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+                    EditText note = new EditText(this); note.setHint("Note (optional)");
+                    f.addView(person); f.addView(phone); f.addView(amount); f.addView(note);
+                    Button go = btn("Record payout");
+                    styleApprove(go);
+                    go.setOnClickListener(v -> {
+                        net.execute(() -> {
+                            try {
+                                JSONObject b = new JSONObject();
+                                b.put("person", person.getText().toString());
+                                b.put("phone", phone.getText().toString());
+                                try { b.put("amount", Double.parseDouble("0" + amount.getText().toString())); }
+                                catch (Exception ex) { b.put("amount", 0); }
+                                b.put("note", note.getText().toString());
+                                AdminApi.Resp rr = AdminApi.post(this, "/api/admin/withdrawals", b);
+                                main.post(() -> {
+                                    Toast.makeText(this, rr.ok() ? "Recorded" : rr.json.optString("error", "Failed"), Toast.LENGTH_LONG).show();
+                                    render();
+                                });
+                            } catch (Exception e) { main.post(() -> Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show()); }
+                        });
+                    });
+                    f.addView(go);
+                    content.addView(f);
+                    // History: table/card toggle
+                    Button tog = btn("Withdrawals: " + ("table".equals(payViewMode) ? "TABLE" : "CARD") + " (toggle)");
+                    styleNeutral(tog);
+                    tog.setOnClickListener(v -> { payViewMode = "table".equals(payViewMode) ? "card" : "table"; render(); });
+                    content.addView(tog);
+                    if (list.length() == 0) { content.addView(tv("No withdrawals yet.")); return; }
+                    if ("table".equals(payViewMode)) {
+                        content.addView(withdrawTable(list));
+                    } else {
+                        for (int i = 0; i < list.length(); i++) {
+                            JSONObject w = list.optJSONObject(i);
+                            content.addView(tv("#" + w.optInt("id") + " " + w.optString("person")
+                                    + " → " + w.optString("phone") + " ৳" + w.optDouble("amount")
+                                    + "\nDate: " + w.optString("createdAt", "").substring(0, Math.min(16, w.optString("createdAt", "").length()))
+                                    + "\nRemaining after: ৳" + w.optDouble("remainingAfter")
+                                    + (w.optString("note", "").isEmpty() ? "" : "\nNote: " + w.optString("note"))));
+                        }
+                    }
+                });
+            } catch (Exception e) {
+                main.post(() -> { content.removeAllViews(); content.addView(tv("Offline: " + e.getMessage())); });
+            }
+        });
+    }
+
+    private TableLayout withdrawTable(JSONArray list) {
+        TableLayout t = new TableLayout(this);
+        t.setStretchAllColumns(true);
+        String[] head = {"#", "Person", "Phone", "Amt", "Date", "Left"};
+        TableRow hr = new TableRow(this);
+        for (String h : head) { TextView c = new TextView(this); c.setText(h); c.setTypeface(null, android.graphics.Typeface.BOLD); c.setPadding(dp(6), dp(6), dp(6), dp(6)); hr.addView(c); }
+        t.addView(hr);
+        for (int i = 0; i < list.length(); i++) {
+            JSONObject w = list.optJSONObject(i);
+            TableRow row = new TableRow(this);
+            String dt = w.optString("createdAt", "");
+            if (dt.length() > 10) dt = dt.substring(0, 10);
+            String[] cells = {String.valueOf(w.optInt("id")), w.optString("person"), w.optString("phone"), "৳" + w.optDouble("amount"), dt, "৳" + w.optDouble("remainingAfter")};
+            for (String c : cells) { TextView tv = new TextView(this); tv.setText(c); tv.setTextSize(11); tv.setPadding(dp(6), dp(6), dp(6), dp(6)); row.addView(tv); }
+            t.addView(row);
+        }
+        ScrollView sv = new ScrollView(this);
+        sv.setHorizontalScrollBarEnabled(true);
+        // Wrap in horizontal scroll via container
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.HORIZONTAL);
+        wrap.addView(t);
+        ScrollView outer = new ScrollView(this);
+        outer.addView(wrap);
+        TableLayout holder = new TableLayout(this);
+        holder.addView(outer);
+        return holder;
+    }
+
+    private LinearLayout paymentTable(JSONArray list) {
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        styleCard(wrap);
+        TableLayout t = new TableLayout(this);
+        t.setStretchAllColumns(true);
+        String[] head = {"#", "User", "Pkg", "Amt", "TxID", "Status"};
+        TableRow hr = new TableRow(this);
+        for (String h : head) { TextView c = new TextView(this); c.setText(h); c.setTypeface(null, android.graphics.Typeface.BOLD); c.setPadding(dp(6), dp(6), dp(6), dp(6)); hr.addView(c); }
+        t.addView(hr);
+        for (int i = 0; i < list.length(); i++) {
+            JSONObject p = list.optJSONObject(i);
+            TableRow row = new TableRow(this);
+            final int pid = p.optInt("id");
+            final String tx = p.optString("transactionId");
+            final String st = p.optString("status");
+            String[] cells = {"#" + pid, p.optString("userName"), p.optString("packageName") + " ৳" + p.optInt("amount"), "৳" + p.optInt("amount"), tx.length() > 12 ? tx.substring(0, 12) + "…" : tx, st};
+            for (String c : cells) { TextView tv = new TextView(this); tv.setText(c); tv.setTextSize(11); tv.setPadding(dp(6), dp(6), dp(6), dp(6)); row.addView(tv); }
+            row.setClickable(true);
+            row.setOnClickListener(v -> {
+                if ("PENDING".equals(st)) confirm("Approve payment #" + pid + "?", () -> review(pid, true, null));
+                else copy("txid", tx);
+            });
+            t.addView(row);
+        }
+        android.widget.HorizontalScrollView hs = new android.widget.HorizontalScrollView(this);
+        hs.addView(t);
+        wrap.addView(hs);
+        TextView hint = new TextView(this);
+        hint.setText("Tap a PENDING row to approve · tap others to copy TxID.");
+        hint.setTextSize(11);
+        wrap.addView(hint);
+        return wrap;
     }
 
     // ---------------- payments ----------------
@@ -333,11 +560,19 @@ public class AdminMainActivity extends AppCompatActivity {
                     go.setOnClickListener(v -> renderPayments(status, sq.getText().toString()));
                     Button tog = btn("PENDING".equals(status) ? "Show ALL" : "Show PENDING");
                     tog.setOnClickListener(v -> renderPayments("PENDING".equals(status) ? "" : "PENDING", sq.getText().toString()));
+                    Button view = btn(("table".equals(payViewMode) ? "TABLE" : "CARD") + " (toggle)");
+                    styleNeutral(view);
+                    view.setOnClickListener(v -> { payViewMode = "table".equals(payViewMode) ? "card" : "table"; render(); });
                     tools.addView(sq);
                     tools.addView(go);
                     tools.addView(tog);
                     content.addView(tools);
-                    if (list.length() == 0) content.addView(tv("No payments."));
+                    content.addView(view);
+                    if (list.length() == 0) { content.addView(tv("No payments.")); return; }
+                    if ("table".equals(payViewMode)) {
+                        content.addView(paymentTable(list));
+                        return;
+                    }
                     for (int i = 0; i < list.length(); i++) {
                         JSONObject p = list.optJSONObject(i);
                         LinearLayout card = new LinearLayout(this);
@@ -430,16 +665,20 @@ public class AdminMainActivity extends AppCompatActivity {
                     sq.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
                     Button go = btn("Search");
                     go.setOnClickListener(v -> renderUsers(sq.getText().toString()));
+                    Button add = btn("Add user");
+                    styleApprove(add);
+                    add.setOnClickListener(v -> addUserForm());
                     tools.addView(sq);
                     tools.addView(go);
                     content.addView(tools);
+                    content.addView(add);
                     for (int i = 0; i < list.length(); i++) {
                         JSONObject u = list.optJSONObject(i);
                         LinearLayout card = new LinearLayout(this);
                         styleCard(card);
                         TextView t = new TextView(this);
                         t.setTextSize(14);
-                        t.setText(u.optString("name") + " · ID " + u.optInt("id")
+                        t.setText(u.optString("name") + " · ID " + u.optInt("id") + " [" + u.optString("role", "user") + "]"
                                 + "\n" + u.optString("email", "") + u.optString("phone", "")
                                 + "\nPackage: " + u.optString("currentPackageName", "—")
                                 + "\nStart: " + u.optString("packageStartDate", "—")
@@ -452,6 +691,10 @@ public class AdminMainActivity extends AppCompatActivity {
                         gap.setText("  ");
                         statusRow.addView(gap);
                         statusRow.addView(statusPill(u.optBoolean("accessEnabled", true) ? "ON" : "OFF"));
+                        TextView gap2 = new TextView(this);
+                        gap2.setText("  ");
+                        statusRow.addView(gap2);
+                        statusRow.addView(statusPill("free".equals(u.optString("role")) ? "FREE" : "PAID"));
                         card.addView(statusRow);
                         LinearLayout row = new LinearLayout(this);
                         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -459,11 +702,19 @@ public class AdminMainActivity extends AppCompatActivity {
                         Button tog = btn(u.optBoolean("accessEnabled", true) ? "Disable" : "Enable");
                         if (u.optBoolean("accessEnabled", true)) styleReject(tog); else styleApprove(tog);
                         tog.setOnClickListener(v -> setAccess(u.optInt("id"), !u.optBoolean("accessEnabled", true)));
+                        Button free = btn("free".equals(u.optString("role")) ? "Make paid" : "Make free");
+                        styleNeutral(free);
+                        free.setOnClickListener(v -> setRole(u.optInt("id"), "free".equals(u.optString("role")) ? "user" : "free"));
                         Button assign = btn("Assign pkg");
                         styleNeutral(assign);
                         assign.setOnClickListener(v -> askAssign(u.optInt("id")));
+                        Button del = btn("Remove");
+                        styleReject(del);
+                        del.setOnClickListener(v -> confirm("Remove user " + u.optString("name") + "? History is kept.", () -> removeUser(u.optInt("id"))));
                         row.addView(tog);
+                        row.addView(free);
                         row.addView(assign);
+                        row.addView(del);
                         card.addView(row);
                         content.addView(card);
                     }
@@ -491,6 +742,69 @@ public class AdminMainActivity extends AppCompatActivity {
                 main.post(() -> Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show());
             }
         });
+    }
+
+    private void setRole(int id, String role) {
+        net.execute(() -> {
+            try {
+                JSONObject b = new JSONObject();
+                b.put("role", role);
+                AdminApi.Resp r = AdminApi.patch(this, "/api/admin/users/" + id + "/access", b);
+                main.post(() -> {
+                    Toast.makeText(this, r.ok() ? ("Role: " + role) : r.json.optString("error", "Failed"), Toast.LENGTH_SHORT).show();
+                    render();
+                });
+            } catch (Exception e) {
+                main.post(() -> Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        });
+    }
+
+    private void removeUser(int id) {
+        net.execute(() -> {
+            try {
+                AdminApi.Resp r = AdminApi.delete(this, "/api/admin/users/" + id);
+                main.post(() -> {
+                    Toast.makeText(this, r.ok() ? "Removed" : r.json.optString("error", "Failed"), Toast.LENGTH_SHORT).show();
+                    render();
+                });
+            } catch (Exception e) {
+                main.post(() -> Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        });
+    }
+
+    private void addUserForm() {
+        LinearLayout f = new LinearLayout(this);
+        f.setOrientation(LinearLayout.VERTICAL);
+        EditText n = new EditText(this); n.setHint("Name");
+        EditText e = new EditText(this); e.setHint("Email or phone"); e.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+        EditText p = new EditText(this); p.setHint("Password (min 4)"); p.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        final boolean[] free = {false};
+        Button roleBtn = btn("Role: user (needs package)");
+        styleNeutral(roleBtn);
+        roleBtn.setOnClickListener(v -> {
+            free[0] = !free[0];
+            roleBtn.setText(free[0] ? "Role: FREE (no payment)" : "Role: user (needs package)");
+        });
+        f.addView(n); f.addView(e); f.addView(p); f.addView(roleBtn);
+        new AlertDialog.Builder(this).setTitle("Add user").setView(f)
+                .setPositiveButton("Create", (x, y) -> net.execute(() -> {
+                    try {
+                        JSONObject b = new JSONObject();
+                        b.put("name", n.getText().toString());
+                        b.put("email", e.getText().toString());
+                        b.put("password", p.getText().toString());
+                        b.put("role", free[0] ? "free" : "user");
+                        AdminApi.Resp r = AdminApi.post(this, "/api/admin/users", b);
+                        main.post(() -> {
+                            Toast.makeText(this, r.ok() ? "Created" : r.json.optString("error", "Failed"), Toast.LENGTH_LONG).show();
+                            render();
+                        });
+                    } catch (Exception ex) {
+                        main.post(() -> Toast.makeText(this, "Error: " + ex.getMessage(), Toast.LENGTH_SHORT).show());
+                    }
+                })).setNegativeButton("Cancel", null).show();
     }
 
     private void askAssign(int userId) {
@@ -558,7 +872,19 @@ public class AdminMainActivity extends AppCompatActivity {
                         tlp.setMargins(0, dp(10), 0, 0);
                         tog.setLayoutParams(tlp);
                         tog.setOnClickListener(v -> togglePackage(p));
-                        card.addView(tog);
+                        LinearLayout row = new LinearLayout(this);
+                        row.setOrientation(LinearLayout.HORIZONTAL);
+                        row.setPadding(0, dp(6), 0, 0);
+                        Button edit = btn("Edit");
+                        styleNeutral(edit);
+                        edit.setOnClickListener(v -> editPackageForm(p));
+                        Button del = btn("Delete");
+                        styleReject(del);
+                        del.setOnClickListener(v -> confirm("Delete package " + p.optString("name") + "?", () -> deletePackage(p.optInt("id"))));
+                        row.addView(tog);
+                        row.addView(edit);
+                        row.addView(del);
+                        card.addView(row);
                         content.addView(card);
                     }
                     Button add = btn("Add package (৳20 / 7d style)");
@@ -582,6 +908,45 @@ public class AdminMainActivity extends AppCompatActivity {
                 AdminApi.Resp r = AdminApi.put(this, "/api/admin/packages/" + p.optInt("id"), b);
                 main.post(() -> {
                     Toast.makeText(this, r.ok() ? "Saved" : r.json.optString("error", "Failed"), Toast.LENGTH_SHORT).show();
+                    render();
+                });
+            } catch (Exception e) {
+                main.post(() -> Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        });
+    }
+
+    private void editPackageForm(JSONObject p) {
+        LinearLayout f = new LinearLayout(this);
+        f.setOrientation(LinearLayout.VERTICAL);
+        EditText n = new EditText(this); n.setText(p.optString("name")); n.setHint("Name");
+        EditText pr = new EditText(this); pr.setText(String.valueOf(p.optInt("price"))); pr.setHint("Price"); pr.setInputType(InputType.TYPE_CLASS_NUMBER);
+        EditText d = new EditText(this); d.setText(String.valueOf(p.optInt("durationDays"))); d.setHint("Duration days"); d.setInputType(InputType.TYPE_CLASS_NUMBER);
+        f.addView(n); f.addView(pr); f.addView(d);
+        new AlertDialog.Builder(this).setTitle("Edit package").setView(f)
+                .setPositiveButton("Save", (x, y) -> net.execute(() -> {
+                    try {
+                        JSONObject b = new JSONObject();
+                        b.put("name", n.getText().toString());
+                        b.put("price", Integer.parseInt("0" + pr.getText().toString()));
+                        b.put("durationDays", Integer.parseInt("0" + d.getText().toString()));
+                        AdminApi.Resp r = AdminApi.put(this, "/api/admin/packages/" + p.optInt("id"), b);
+                        main.post(() -> {
+                            Toast.makeText(this, r.ok() ? "Saved" : r.json.optString("error", "Failed"), Toast.LENGTH_SHORT).show();
+                            render();
+                        });
+                    } catch (Exception e) {
+                        main.post(() -> Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                    }
+                })).setNegativeButton("Cancel", null).show();
+    }
+
+    private void deletePackage(int id) {
+        net.execute(() -> {
+            try {
+                AdminApi.Resp r = AdminApi.delete(this, "/api/admin/packages/" + id);
+                main.post(() -> {
+                    Toast.makeText(this, r.ok() ? "Deleted" : r.json.optString("error", "Failed"), Toast.LENGTH_LONG).show();
                     render();
                 });
             } catch (Exception e) {
