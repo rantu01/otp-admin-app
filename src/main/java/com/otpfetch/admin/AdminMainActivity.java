@@ -212,7 +212,7 @@ public class AdminMainActivity extends AppCompatActivity {
             boolean active = tab.equals(b.getTag());
             if (active) {
                 b.setBackgroundTintList(ContextCompat.getColorStateList(this, R.color.tab_active));
-                b.setTextColor(0xFFFFFFFF);
+                b.setTextColor(ContextCompat.getColor(this, R.color.on_tint));
             } else {
                 b.setBackgroundTintList(ContextCompat.getColorStateList(this, R.color.card_bg));
                 b.setTextColor(ContextCompat.getColor(this, R.color.tab_active));
@@ -222,12 +222,12 @@ public class AdminMainActivity extends AppCompatActivity {
 
     private void styleApprove(Button b) {
         b.setBackgroundTintList(ContextCompat.getColorStateList(this, R.color.success));
-        b.setTextColor(0xFFFFFFFF);
+        b.setTextColor(ContextCompat.getColor(this, R.color.on_tint));
     }
 
     private void styleReject(Button b) {
         b.setBackgroundTintList(ContextCompat.getColorStateList(this, R.color.danger));
-        b.setTextColor(0xFFFFFFFF);
+        b.setTextColor(ContextCompat.getColor(this, R.color.on_tint));
     }
 
     private void styleNeutral(Button b) {

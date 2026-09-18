@@ -128,9 +128,10 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="18dp"
-                android:backgroundTint="@color/accent_blue"
+                android:backgroundTint="@color/btn_primary"
                 android:minHeight="52dp"
                 android:text="Sign in securely"
+                android:textColor="#FFFFFF"
                 android:textSize="15sp" />
 
             <TextView

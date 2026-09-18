@@ -17,6 +17,11 @@
     <color name="tab_active">#6C3CE0</color>
     <color name="input_hint">#8A8F98</color>
 
+    <!-- Text on bright tinted buttons: white in light mode (dark text in night mode) -->
+    <color name="on_tint">#FFFFFF</color>
+    <!-- Login button: same purple as before in light, deepened at night -->
+    <color name="btn_primary">#6C3CE0</color>
+
     <!-- Status pills -->
     <color name="pill_pending_bg">#FEF3C7</color>
     <color name="pill_pending_text">#92400E</color>
