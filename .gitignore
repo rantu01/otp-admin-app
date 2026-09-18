@@ -1,0 +1,14 @@
+# Android / Gradle
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+build/
+
+# Signing secrets — never commit these
+*.jks
+*.keystore
+
+# Wrapper jar (we build with system Gradle in CI, see .github/workflows/)
+gradle/wrapper/gradle-wrapper.jar
