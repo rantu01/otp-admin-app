@@ -13,20 +13,28 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 17 (required by Android Gradle Plugin 8.x)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: "temurin"
           java-version: "17"
           cache: "gradle"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # NOTE: ubuntu-latest runners already ship the Android SDK
+      # ($ANDROID_SDK_ROOT + sdkmanager on PATH), so we install only
+      # the packages this project needs instead of using
+      # android-actions/setup-android@v3 (it tries to install the
+      # long-removed "tools" package and fails with exit code 1,
+      # plus it still runs on Node 20 which is deprecated).
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          yes | sdkmanager --licenses > /dev/null || true
 
       - name: Set up Gradle 8.7
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
 
