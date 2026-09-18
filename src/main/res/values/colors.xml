@@ -21,6 +21,7 @@
     <color name="on_tint">#FFFFFF</color>
     <!-- Login button: same purple as before in light, deepened at night -->
     <color name="btn_primary">#6C3CE0</color>
+    <color name="ic_launcher_background">#000000</color>
 
     <!-- Status pills -->
     <color name="pill_pending_bg">#FEF3C7</color>

@@ -157,7 +157,7 @@ public class AdminMainActivity extends AppCompatActivity {
     // ---------------- rendering ----------------
     private void render() {
         content.removeAllViews();
-        headerView.setText("Admin · " + tab.toUpperCase() + " · " + AdminSession.getBase(this));
+        headerView.setText("NesaAdmin · " + tab.toUpperCase() + " · " + AdminSession.getBase(this));
         TextView loading = new TextView(this);
         loading.setText("Loading...");
         content.addView(loading);

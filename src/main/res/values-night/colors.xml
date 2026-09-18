@@ -21,6 +21,7 @@
     <color name="on_tint">#14101F</color>
     <!-- Login button: deepened purple so white/dark text stays readable -->
     <color name="btn_primary">#5E35B1</color>
+    <color name="ic_launcher_background">#000000</color>
 
     <!-- Status pills -->
     <color name="pill_pending_bg">#453204</color>
