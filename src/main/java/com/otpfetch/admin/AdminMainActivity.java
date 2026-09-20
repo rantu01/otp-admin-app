@@ -519,7 +519,8 @@ public class AdminMainActivity extends AppCompatActivity {
             TableRow row = new TableRow(this);
             final int pid = p.optInt("id");
             final String tx = p.optString("transactionId");
-            final String st = p.optString("status");
+            // AUTO badge: approved by SMS auto-verify, no admin involvement.
+            final String st = p.optString("status") + (p.optBoolean("autoVerified", false) ? " · AUTO" : "");
             String[] cells = {"#" + pid, p.optString("userName"), p.optString("packageName") + " ৳" + p.optInt("amount"), "৳" + p.optInt("amount"), tx.length() > 12 ? tx.substring(0, 12) + "…" : tx, st};
             for (String c : cells) { TextView tv = new TextView(this); tv.setText(c); tv.setTextSize(11); tv.setPadding(dp(6), dp(6), dp(6), dp(6)); row.addView(tv); }
             row.setClickable(true);
@@ -583,7 +584,8 @@ public class AdminMainActivity extends AppCompatActivity {
                                 + "\n" + p.optString("packageName") + " ৳" + p.optInt("amount")
                                 + " via " + p.optString("paymentMethodName") + " (" + p.optString("walletNumber") + ")"
                                 + "\nTxID: " + p.optString("transactionId")
-                                + "\nSubmitted: " + safeDate(p.optString("submittedAt", "")));
+                                + "\nSubmitted: " + safeDate(p.optString("submittedAt", ""))
+                                + (p.optBoolean("autoVerified", false) ? "\n✓ Auto-verified via bKash SMS (no manual review)" : ""));
                         t.setTextSize(14);
                         card.addView(t);
                         card.addView(statusPill(p.optString("status")));
@@ -1153,6 +1155,7 @@ public class AdminMainActivity extends AppCompatActivity {
                         t.setText("৳" + p.optDouble("amount") + " · " + p.optString("trxId")
                                 + "\nFrom: " + p.optString("sender") + " · Fee ৳" + p.optDouble("fee")
                                 + "\nDate: " + p.optString("transactionDate", "") + " " + p.optString("transactionTime", "")
+                                + (p.optInt("matchedPaymentId", 0) != 0 ? "\n✓ Auto-matched to payment #" + p.optInt("matchedPaymentId") : "")
                                 + "\nSMS: " + p.optString("originalMessage", "").substring(0, Math.min(120, p.optString("originalMessage", "").length())));
                         t.setTextSize(14);
                         card.addView(t);
