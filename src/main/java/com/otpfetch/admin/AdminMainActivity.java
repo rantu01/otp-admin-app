@@ -94,7 +94,7 @@ public class AdminMainActivity extends AppCompatActivity {
         Button refreshBtn = findViewById(R.id.refreshBtn);
         Button logoutBtn = findViewById(R.id.logoutBtn);
         LinearLayout nav = findViewById(R.id.navRow);
-        String[] tabs = {"dashboard", "profit", "withdraw", "payments", "users", "packages", "methods", "versions"};
+        String[] tabs = {"dashboard", "profit", "withdraw", "payments", "recvpay", "users", "packages", "methods", "versions"};
         for (String t : tabs) {
             Button b = new Button(this);
             b.setText(t.toUpperCase());
@@ -211,6 +211,7 @@ public class AdminMainActivity extends AppCompatActivity {
         content.addView(loading);
         switch (tab) {
             case "payments": renderPayments("PENDING", ""); break;
+            case "recvpay": renderRecvPayments("", ""); break;
             case "profit": renderProfit(); break;
             case "withdraw": renderWithdraw(); break;
             case "users": renderUsers(""); break;
@@ -1087,6 +1088,117 @@ public class AdminMainActivity extends AppCompatActivity {
                         main.post(() -> Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show());
                     }
                 })).setNegativeButton("Cancel", null).show();
+    }
+
+    // ---------------- received bKash payments (Recive payment app outbox) ----------------
+    private void renderRecvPayments(String search, String status) {
+        net.execute(() -> {
+            try {
+                String q = AdminApi.qs("search", search, "status", status);
+                AdminApi.Resp r = AdminApi.get(this, "/api/received-payments" + (q.replace("=", "").isEmpty() ? "" : "?" + q));
+                if (!r.ok()) throw new Exception(r.json.optString("error", "Failed"));
+                JSONArray arr = r.json.optJSONArray("payments");
+                if (arr == null) arr = new JSONArray();
+                final JSONArray list = arr;
+                main.post(() -> {
+                    content.removeAllViews();
+                    content.addView(tv("bKash receiver-phone outbox. Verify matches customer TrxIDs against these SMS records."));
+                    LinearLayout tools = new LinearLayout(this);
+                    tools.setOrientation(LinearLayout.HORIZONTAL);
+                    EditText sq = new EditText(this);
+                    sq.setHint("Search TrxID / sender");
+                    sq.setText(search);
+                    sq.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+                    Button go = btn("Go");
+                    go.setOnClickListener(v -> renderRecvPayments(sq.getText().toString(), status));
+                    Button tog = btn(status.isEmpty() ? "Show PENDING" : "Show ALL");
+                    tog.setOnClickListener(v -> renderRecvPayments(sq.getText().toString(), status.isEmpty() ? "pending" : ""));
+                    tools.addView(sq);
+                    tools.addView(go);
+                    tools.addView(tog);
+                    content.addView(tools);
+                    // Verify box: paste a customer TrxID + expected amount
+                    LinearLayout vf = new LinearLayout(this);
+                    vf.setOrientation(LinearLayout.VERTICAL);
+                    styleCard(vf);
+                    TextView h = new TextView(this);
+                    h.setText("Verify customer TrxID");
+                    h.setTypeface(null, android.graphics.Typeface.BOLD);
+                    vf.addView(h);
+                    EditText tid = new EditText(this); tid.setHint("TrxID (e.g. DIJ2N7GCGS)");
+                    EditText amt = new EditText(this); amt.setHint("Expected amount (optional)"); amt.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+                    vf.addView(tid); vf.addView(amt);
+                    Button goV = btn("Verify");
+                    styleApprove(goV);
+                    goV.setOnClickListener(v -> net.execute(() -> {
+                        try {
+                            JSONObject b = new JSONObject();
+                            b.put("trxId", tid.getText().toString());
+                            if (!amt.getText().toString().isEmpty()) b.put("amount", Double.parseDouble("0" + amt.getText().toString()));
+                            AdminApi.Resp rr = AdminApi.post(this, "/api/received-payments/verify", b);
+                            main.post(() -> {
+                                Toast.makeText(this, rr.ok() ? ("Found · amountOk=" + rr.json.optBoolean("amountOk")) : rr.json.optString("error", "Not found"), Toast.LENGTH_LONG).show();
+                                render();
+                            });
+                        } catch (Exception e) { main.post(() -> Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show()); }
+                    }));
+                    vf.addView(goV);
+                    content.addView(vf);
+                    if (list.length() == 0) { content.addView(tv("No received payments.")); return; }
+                    for (int i = 0; i < list.length(); i++) {
+                        JSONObject p = list.optJSONObject(i);
+                        LinearLayout card = new LinearLayout(this);
+                        styleCard(card);
+                        TextView t = new TextView(this);
+                        t.setText("৳" + p.optDouble("amount") + " · " + p.optString("trxId")
+                                + "\nFrom: " + p.optString("sender") + " · Fee ৳" + p.optDouble("fee")
+                                + "\nDate: " + p.optString("transactionDate", "") + " " + p.optString("transactionTime", "")
+                                + "\nSMS: " + p.optString("originalMessage", "").substring(0, Math.min(120, p.optString("originalMessage", "").length())));
+                        t.setTextSize(14);
+                        card.addView(t);
+                        card.addView(statusPill(p.optString("status")));
+                        LinearLayout row = new LinearLayout(this);
+                        row.setOrientation(LinearLayout.HORIZONTAL);
+                        row.setPadding(0, dp(10), 0, 0);
+                        Button c = btn("Copy TrxID");
+                        styleNeutral(c);
+                        c.setOnClickListener(v -> copy("trxid", p.optString("trxId")));
+                        row.addView(c);
+                        if ("pending".equals(p.optString("status"))) {
+                            Button u = btn("Mark used");
+                            styleApprove(u);
+                            u.setOnClickListener(v -> confirm("Mark " + p.optString("trxId") + " as USED?", () -> setRecvStatus(p.optString("trxId"), "used")));
+                            Button rj = btn("Reject");
+                            styleReject(rj);
+                            rj.setOnClickListener(v -> confirm("Reject " + p.optString("trxId") + "?", () -> setRecvStatus(p.optString("trxId"), "rejected")));
+                            row.addView(u);
+                            row.addView(rj);
+                        }
+                        card.addView(row);
+                        content.addView(card);
+                    }
+                });
+            } catch (Exception e) {
+                main.post(() -> { content.removeAllViews(); content.addView(tv("Offline: " + e.getMessage())); });
+            }
+        });
+    }
+
+    private void setRecvStatus(String trxId, String status) {
+        net.execute(() -> {
+            try {
+                JSONObject b = new JSONObject();
+                b.put("status", status);
+                // PATCH via AdminApi (uses call with method PATCH)
+                AdminApi.Resp r = AdminApi.patch(this, "/api/received-payments/" + trxId + "/status", b);
+                main.post(() -> {
+                    Toast.makeText(this, r.ok() ? "Updated" : r.json.optString("error", "Failed"), Toast.LENGTH_SHORT).show();
+                    render();
+                });
+            } catch (Exception e) {
+                main.post(() -> Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+            }
+        });
     }
 
     // ---------------- versions ----------------
