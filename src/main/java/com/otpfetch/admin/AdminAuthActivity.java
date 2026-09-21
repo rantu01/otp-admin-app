@@ -29,33 +29,38 @@ public class AdminAuthActivity extends AppCompatActivity {
             finish();
             return;
         }
-        EditText server = findViewById(R.id.serverInput);
         EditText login = findViewById(R.id.loginInput);
         EditText pass = findViewById(R.id.passInput);
         TextView hint = findViewById(R.id.authHint);
         Button btn = findViewById(R.id.loginBtn);
-        server.setText(AdminSession.getBase(this));
+        // Backend URL is centralized (ApiConfig) — never entered manually.
+        AdminSession.setBase(this, ApiConfig.DEFAULT_BASE_URL);
         btn.setOnClickListener(v -> {
-            String base = server.getText().toString().trim();
             String l = login.getText().toString().trim();
             String p = pass.getText().toString();
-            if (base.isEmpty() || l.isEmpty() || p.isEmpty()) {
-                Toast.makeText(this, "All fields required", Toast.LENGTH_SHORT).show();
+            if (l.isEmpty() || p.isEmpty()) {
+                Toast.makeText(this, "Email and password required", Toast.LENGTH_SHORT).show();
                 return;
             }
-            AdminSession.setBase(this, base);
             hint.setText("Logging in...");
             hint.setTextColor(ContextCompat.getColor(this, R.color.muted_text));
+            UiBusy.setBusy(btn, "Logging in...");
             net.execute(() -> {
                 try {
                     JSONObject body = new JSONObject();
                     body.put("login", l);
                     body.put("password", p);
+                    try {
+                        String devId = android.provider.Settings.Secure.getString(
+                                getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
+                        if (devId != null && !devId.isEmpty()) body.put("deviceId", devId);
+                    } catch (Exception ignored) {}
                     AdminApi.Resp r = AdminApi.post(this, "/api/auth/login", body);
                     if (!r.ok()) throw new Exception(r.json.optString("error", "Login failed"));
                     JSONObject user = r.json.optJSONObject("user");
                     if (user == null || !"admin".equals(user.optString("role"))) {
                         runOnUiThread(() -> {
+                            UiBusy.setIdle(btn);
                             hint.setText("Not an admin account.");
                             hint.setTextColor(ContextCompat.getColor(this, R.color.danger));
                         });
@@ -73,11 +78,13 @@ public class AdminAuthActivity extends AppCompatActivity {
                         AdminApi.post(this, "/api/admin/fcm-tokens", t);
                     } catch (Exception ignored) {}
                     runOnUiThread(() -> {
+                        UiBusy.setIdle(btn);
                         startActivity(new Intent(this, AdminMainActivity.class));
                         finish();
                     });
                 } catch (Exception e) {
                     runOnUiThread(() -> {
+                        UiBusy.setIdle(btn);
                         hint.setText("Error: " + e.getMessage());
                         hint.setTextColor(ContextCompat.getColor(this, R.color.danger));
                     });

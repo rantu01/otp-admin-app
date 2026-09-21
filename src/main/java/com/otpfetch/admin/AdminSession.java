@@ -8,7 +8,8 @@ import org.json.JSONObject;
 /** Admin session: token + backend base URL. Only role=admin may log in here. */
 public final class AdminSession {
     private static final String PREFS = "otp_admin_prefs";
-    public static final String DEFAULT_BASE = "http://10.0.2.2:4000";
+    /** Central default backend URL (see ApiConfig — change it in one place). */
+    public static final String DEFAULT_BASE = ApiConfig.DEFAULT_BASE_URL;
 
     private AdminSession() {}
 
@@ -18,7 +19,15 @@ public final class AdminSession {
 
     public static String getBase(Context ctx) {
         String v = prefs(ctx).getString("base", DEFAULT_BASE);
-        return (v == null || v.isEmpty()) ? DEFAULT_BASE : v.replaceAll("/+$", "");
+        if (v == null || v.isEmpty()) return DEFAULT_BASE;
+        v = v.trim().replaceAll("/+$", "");
+        // Migrate stale manual entries (emulator loopback / LAN IPs typed in
+        // before the URL was centralized) to the central default.
+        if (v.contains("10.0.2.2") || v.contains("127.0.0.1") || v.contains("localhost")
+                || v.matches("https?://192\\.168\\..*") || v.matches("https?://10\\..*")) {
+            return DEFAULT_BASE;
+        }
+        return v;
     }
 
     public static void setBase(Context ctx, String url) {

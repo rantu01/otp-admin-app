@@ -113,11 +113,25 @@ public class AdminMainActivity extends AppCompatActivity {
             nav.addView(b);
         }
         refreshNav();
-        refreshBtn.setOnClickListener(v -> render());
+        refreshBtn.setOnClickListener(v -> {
+            UiBusy.setBusy(refreshBtn, "Loading...");
+            render();
+            main.postDelayed(() -> UiBusy.setIdle(refreshBtn), 800);
+        });
         logoutBtn.setOnClickListener(v -> {
-            AdminSession.logout(this);
-            startActivity(new Intent(this, AdminAuthActivity.class));
-            finish();
+            UiBusy.setBusy(logoutBtn, "Logging out...");
+            // Best-effort backend logout: frees the single live session so the
+            // same admin account can log in from another device afterwards.
+            net.execute(() -> {
+                try {
+                    AdminApi.post(this, "/api/auth/logout", new JSONObject());
+                } catch (Exception ignored) {}
+                main.post(() -> {
+                    AdminSession.logout(this);
+                    startActivity(new Intent(this, AdminAuthActivity.class));
+                    finish();
+                });
+            });
         });
         ensureChannel();
         requestNotifPermission();
@@ -325,13 +339,25 @@ public class AdminMainActivity extends AppCompatActivity {
         Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show();
     }
 
+    /**
+     * Generic button loading state for admin actions: disables the tapped
+     * button with loader text while the network call runs. Success paths
+     * call render() (which rebuilds the list, dropping the busy button);
+     * failure paths re-enable it below via {@code failIdle}.
+     */
+    private void failIdle(Button src) {
+        if (src != null) UiBusy.setIdle(src);
+    }
+
     // ---------------- dashboard ----------------
     private void renderDashboard() {
         net.execute(() -> {
             try {
                 AdminApi.Resp r = AdminApi.get(this, "/api/admin/dashboard");
                 if (r.code == 401) {
+                    final String msg = r.json.optString("error", "Session expired.");
                     main.post(() -> {
+                        Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
                         AdminSession.logout(this);
                         startActivity(new Intent(this, AdminAuthActivity.class));
                         finish();
@@ -432,6 +458,7 @@ public class AdminMainActivity extends AppCompatActivity {
                     Button go = btn("Record payout");
                     styleApprove(go);
                     go.setOnClickListener(v -> {
+                        UiBusy.setBusy(go, "Saving...");
                         net.execute(() -> {
                             try {
                                 JSONObject b = new JSONObject();
@@ -445,7 +472,10 @@ public class AdminMainActivity extends AppCompatActivity {
                                     Toast.makeText(this, rr.ok() ? "Recorded" : rr.json.optString("error", "Failed"), Toast.LENGTH_LONG).show();
                                     render();
                                 });
-                            } catch (Exception e) { main.post(() -> Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show()); }
+                            } catch (Exception e) { main.post(() -> {
+                                failIdle(go);
+                                Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                            }); }
                         });
                     });
                     f.addView(go);
@@ -580,12 +610,16 @@ public class AdminMainActivity extends AppCompatActivity {
                         LinearLayout card = new LinearLayout(this);
                         styleCard(card);
                         TextView t = new TextView(this);
-                        t.setText("#" + p.optInt("id") + " " + p.optString("userName") + " (ID " + p.optInt("userId") + ")"
+                        String cardText = "#" + p.optInt("id") + " " + p.optString("userName") + " (ID " + p.optInt("userId") + ")"
                                 + "\n" + p.optString("packageName") + " ৳" + p.optInt("amount")
                                 + " via " + p.optString("paymentMethodName") + " (" + p.optString("walletNumber") + ")"
                                 + "\nTxID: " + p.optString("transactionId")
                                 + "\nSubmitted: " + safeDate(p.optString("submittedAt", ""))
-                                + (p.optBoolean("autoVerified", false) ? "\n✓ Auto-verified via bKash SMS (no manual review)" : ""));
+                                + (p.optBoolean("autoVerified", false) ? "\n✓ Auto-verified via bKash SMS (no manual review)" : "");
+                        if (!p.optString("verifyNote", "").isEmpty()) {
+                            cardText += "\nNote: " + p.optString("verifyNote");
+                        }
+                        t.setText(cardText);
                         t.setTextSize(14);
                         card.addView(t);
                         card.addView(statusPill(p.optString("status")));
@@ -599,10 +633,10 @@ public class AdminMainActivity extends AppCompatActivity {
                         if ("PENDING".equals(p.optString("status"))) {
                             Button a = btn("Approve");
                             styleApprove(a);
-                            a.setOnClickListener(v -> confirm("Approve payment #" + p.optInt("id") + "?", () -> review(p.optInt("id"), true, null)));
+                            a.setOnClickListener(v -> confirm("Approve payment #" + p.optInt("id") + "?", () -> review(a, p.optInt("id"), true, null)));
                             Button rj = btn("Reject");
                             styleReject(rj);
-                            rj.setOnClickListener(v -> askReason(p.optInt("id")));
+                            rj.setOnClickListener(v -> askReason(rj, p.optInt("id")));
                             row.addView(a);
                             row.addView(rj);
                         }
@@ -625,15 +659,17 @@ public class AdminMainActivity extends AppCompatActivity {
                 .setNegativeButton("No", null).show();
     }
 
-    private void askReason(int id) {
+    private void askReason(Button src, int id) {
         EditText in = new EditText(this);
         in.setHint("Reason (e.g. Transaction ID could not be verified)");
         new AlertDialog.Builder(this).setTitle("Reject payment #" + id).setView(in)
-                .setPositiveButton("Reject", (d, w) -> review(id, false, in.getText().toString()))
+                .setPositiveButton("Reject", (d, w) -> review(src, id, false, in.getText().toString()))
                 .setNegativeButton("Cancel", null).show();
     }
 
-    private void review(int id, boolean approve, String reason) {
+    /** Approve/reject with button loading state (disabled + loader text). */
+    private void review(Button src, int id, boolean approve, String reason) {
+        if (src != null) UiBusy.setBusy(src, approve ? "Approving..." : "Rejecting...");
         net.execute(() -> {
             try {
                 JSONObject body = new JSONObject();
@@ -644,9 +680,16 @@ public class AdminMainActivity extends AppCompatActivity {
                     render();
                 });
             } catch (Exception e) {
-                main.post(() -> Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                main.post(() -> {
+                    if (src != null) UiBusy.setIdle(src);
+                    Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
             }
         });
+    }
+
+    private void review(int id, boolean approve, String reason) {
+        review(null, id, approve, reason);
     }
 
     // ---------------- users ----------------
@@ -704,16 +747,25 @@ public class AdminMainActivity extends AppCompatActivity {
                         row.setPadding(0, dp(10), 0, 0);
                         Button tog = btn(u.optBoolean("accessEnabled", true) ? "Disable" : "Enable");
                         if (u.optBoolean("accessEnabled", true)) styleReject(tog); else styleApprove(tog);
-                        tog.setOnClickListener(v -> setAccess(u.optInt("id"), !u.optBoolean("accessEnabled", true)));
+                        tog.setOnClickListener(v -> {
+                            UiBusy.setBusy(tog, "Saving...");
+                            setAccess(tog, u.optInt("id"), !u.optBoolean("accessEnabled", true));
+                        });
                         Button free = btn("free".equals(u.optString("role")) ? "Make paid" : "Make free");
                         styleNeutral(free);
-                        free.setOnClickListener(v -> setRole(u.optInt("id"), "free".equals(u.optString("role")) ? "user" : "free"));
+                        free.setOnClickListener(v -> {
+                            UiBusy.setBusy(free, "Saving...");
+                            setRole(free, u.optInt("id"), "free".equals(u.optString("role")) ? "user" : "free");
+                        });
                         Button assign = btn("Assign pkg");
                         styleNeutral(assign);
                         assign.setOnClickListener(v -> askAssign(u.optInt("id")));
                         Button del = btn("Remove");
                         styleReject(del);
-                        del.setOnClickListener(v -> confirm("Remove user " + u.optString("name") + "? History is kept.", () -> removeUser(u.optInt("id"))));
+                        del.setOnClickListener(v -> confirm("Remove user " + u.optString("name") + "? History is kept.", () -> {
+                            UiBusy.setBusy(del, "Removing...");
+                            removeUser(del, u.optInt("id"));
+                        }));
                         row.addView(tog);
                         row.addView(free);
                         row.addView(assign);
@@ -731,7 +783,7 @@ public class AdminMainActivity extends AppCompatActivity {
         });
     }
 
-    private void setAccess(int id, boolean enabled) {
+    private void setAccess(Button src, int id, boolean enabled) {
         net.execute(() -> {
             try {
                 JSONObject b = new JSONObject();
@@ -742,12 +794,15 @@ public class AdminMainActivity extends AppCompatActivity {
                     render();
                 });
             } catch (Exception e) {
-                main.post(() -> Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                main.post(() -> {
+                    failIdle(src);
+                    Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
             }
         });
     }
 
-    private void setRole(int id, String role) {
+    private void setRole(Button src, int id, String role) {
         net.execute(() -> {
             try {
                 JSONObject b = new JSONObject();
@@ -758,12 +813,15 @@ public class AdminMainActivity extends AppCompatActivity {
                     render();
                 });
             } catch (Exception e) {
-                main.post(() -> Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                main.post(() -> {
+                    failIdle(src);
+                    Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
             }
         });
     }
 
-    private void removeUser(int id) {
+    private void removeUser(Button src, int id) {
         net.execute(() -> {
             try {
                 AdminApi.Resp r = AdminApi.delete(this, "/api/admin/users/" + id);
@@ -772,7 +830,10 @@ public class AdminMainActivity extends AppCompatActivity {
                     render();
                 });
             } catch (Exception e) {
-                main.post(() -> Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                main.post(() -> {
+                    failIdle(src);
+                    Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
             }
         });
     }
@@ -822,7 +883,8 @@ public class AdminMainActivity extends AppCompatActivity {
                 main.post(() -> new AlertDialog.Builder(this).setTitle("Assign package to user " + userId)
                         .setItems(names, (d, which) -> {
                             int pkgId = cachePackages.optJSONObject(which).optInt("id");
-                            assignPkg(userId, pkgId);
+                            Toast.makeText(this, "Assigning...", Toast.LENGTH_SHORT).show();
+                            assignPkg(null, userId, pkgId);
                         }).show());
             } catch (Exception e) {
                 main.post(() -> Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show());
@@ -830,7 +892,7 @@ public class AdminMainActivity extends AppCompatActivity {
         });
     }
 
-    private void assignPkg(int userId, int pkgId) {
+    private void assignPkg(Button src, int userId, int pkgId) {
         net.execute(() -> {
             try {
                 JSONObject b = new JSONObject();
@@ -841,7 +903,10 @@ public class AdminMainActivity extends AppCompatActivity {
                     render();
                 });
             } catch (Exception e) {
-                main.post(() -> Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                main.post(() -> {
+                    failIdle(src);
+                    Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
             }
         });
     }
@@ -874,7 +939,10 @@ public class AdminMainActivity extends AppCompatActivity {
                                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
                         tlp.setMargins(0, dp(10), 0, 0);
                         tog.setLayoutParams(tlp);
-                        tog.setOnClickListener(v -> togglePackage(p));
+                        tog.setOnClickListener(v -> {
+                            UiBusy.setBusy(tog, "Saving...");
+                            togglePackage(tog, p);
+                        });
                         LinearLayout row = new LinearLayout(this);
                         row.setOrientation(LinearLayout.HORIZONTAL);
                         row.setPadding(0, dp(6), 0, 0);
@@ -883,7 +951,10 @@ public class AdminMainActivity extends AppCompatActivity {
                         edit.setOnClickListener(v -> editPackageForm(p));
                         Button del = btn("Delete");
                         styleReject(del);
-                        del.setOnClickListener(v -> confirm("Delete package " + p.optString("name") + "?", () -> deletePackage(p.optInt("id"))));
+                        del.setOnClickListener(v -> confirm("Delete package " + p.optString("name") + "?", () -> {
+                            UiBusy.setBusy(del, "Deleting...");
+                            deletePackage(del, p.optInt("id"));
+                        }));
                         row.addView(tog);
                         row.addView(edit);
                         row.addView(del);
@@ -903,7 +974,7 @@ public class AdminMainActivity extends AppCompatActivity {
         });
     }
 
-    private void togglePackage(JSONObject p) {
+    private void togglePackage(Button src, JSONObject p) {
         net.execute(() -> {
             try {
                 JSONObject b = new JSONObject();
@@ -914,7 +985,10 @@ public class AdminMainActivity extends AppCompatActivity {
                     render();
                 });
             } catch (Exception e) {
-                main.post(() -> Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                main.post(() -> {
+                    failIdle(src);
+                    Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
             }
         });
     }
@@ -944,7 +1018,7 @@ public class AdminMainActivity extends AppCompatActivity {
                 })).setNegativeButton("Cancel", null).show();
     }
 
-    private void deletePackage(int id) {
+    private void deletePackage(Button src, int id) {
         net.execute(() -> {
             try {
                 AdminApi.Resp r = AdminApi.delete(this, "/api/admin/packages/" + id);
@@ -953,7 +1027,10 @@ public class AdminMainActivity extends AppCompatActivity {
                     render();
                 });
             } catch (Exception e) {
-                main.post(() -> Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                main.post(() -> {
+                    failIdle(src);
+                    Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
             }
         });
     }
@@ -1010,7 +1087,10 @@ public class AdminMainActivity extends AppCompatActivity {
                         row.setPadding(0, dp(10), 0, 0);
                         Button tog = btn("active".equals(m.optString("status")) ? "Deactivate" : "Activate");
                         if ("active".equals(m.optString("status"))) styleReject(tog); else styleApprove(tog);
-                        tog.setOnClickListener(v -> toggleMethod(m));
+                        tog.setOnClickListener(v -> {
+                            UiBusy.setBusy(tog, "Saving...");
+                            toggleMethod(tog, m);
+                        });
                         Button edit = btn("Edit number");
                         styleNeutral(edit);
                         edit.setOnClickListener(v -> editMethod(m));
@@ -1032,7 +1112,7 @@ public class AdminMainActivity extends AppCompatActivity {
         });
     }
 
-    private void toggleMethod(JSONObject m) {
+    private void toggleMethod(Button src, JSONObject m) {
         net.execute(() -> {
             try {
                 JSONObject b = new JSONObject();
@@ -1043,7 +1123,10 @@ public class AdminMainActivity extends AppCompatActivity {
                     render();
                 });
             } catch (Exception e) {
-                main.post(() -> Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                main.post(() -> {
+                    failIdle(src);
+                    Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
             }
         });
     }
@@ -1132,7 +1215,9 @@ public class AdminMainActivity extends AppCompatActivity {
                     vf.addView(tid); vf.addView(amt);
                     Button goV = btn("Verify");
                     styleApprove(goV);
-                    goV.setOnClickListener(v -> net.execute(() -> {
+                    goV.setOnClickListener(v -> {
+                        UiBusy.setBusy(goV, "Verifying...");
+                        net.execute(() -> {
                         try {
                             JSONObject b = new JSONObject();
                             b.put("trxId", tid.getText().toString());
@@ -1142,8 +1227,11 @@ public class AdminMainActivity extends AppCompatActivity {
                                 Toast.makeText(this, rr.ok() ? ("Found · amountOk=" + rr.json.optBoolean("amountOk")) : rr.json.optString("error", "Not found"), Toast.LENGTH_LONG).show();
                                 render();
                             });
-                        } catch (Exception e) { main.post(() -> Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show()); }
-                    }));
+                        } catch (Exception e) { main.post(() -> {
+                            failIdle(goV);
+                            Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                        }); }
+                    });});
                     vf.addView(goV);
                     content.addView(vf);
                     if (list.length() == 0) { content.addView(tv("No received payments.")); return; }
@@ -1170,10 +1258,16 @@ public class AdminMainActivity extends AppCompatActivity {
                         if ("pending".equals(p.optString("status"))) {
                             Button u = btn("Mark used");
                             styleApprove(u);
-                            u.setOnClickListener(v -> confirm("Mark " + p.optString("trxId") + " as USED?", () -> setRecvStatus(p.optString("trxId"), "used")));
+                            u.setOnClickListener(v -> confirm("Mark " + p.optString("trxId") + " as USED?", () -> {
+                                UiBusy.setBusy(u, "Saving...");
+                                setRecvStatus(u, p.optString("trxId"), "used");
+                            }));
                             Button rj = btn("Reject");
                             styleReject(rj);
-                            rj.setOnClickListener(v -> confirm("Reject " + p.optString("trxId") + "?", () -> setRecvStatus(p.optString("trxId"), "rejected")));
+                            rj.setOnClickListener(v -> confirm("Reject " + p.optString("trxId") + "?", () -> {
+                                UiBusy.setBusy(rj, "Rejecting...");
+                                setRecvStatus(rj, p.optString("trxId"), "rejected");
+                            }));
                             row.addView(u);
                             row.addView(rj);
                         }
@@ -1187,7 +1281,7 @@ public class AdminMainActivity extends AppCompatActivity {
         });
     }
 
-    private void setRecvStatus(String trxId, String status) {
+    private void setRecvStatus(Button src, String trxId, String status) {
         net.execute(() -> {
             try {
                 JSONObject b = new JSONObject();
@@ -1199,7 +1293,10 @@ public class AdminMainActivity extends AppCompatActivity {
                     render();
                 });
             } catch (Exception e) {
-                main.post(() -> Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                main.post(() -> {
+                    failIdle(src);
+                    Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
             }
         });
     }
@@ -1231,7 +1328,9 @@ public class AdminMainActivity extends AppCompatActivity {
                     EditText msg = new EditText(this); msg.setHint("Message");
                     f.addView(latest); f.addView(min); f.addView(url); f.addView(msg);
                     Button save = btn("Save android version");
-                    save.setOnClickListener(v -> net.execute(() -> {
+                    save.setOnClickListener(v -> {
+                        UiBusy.setBusy(save, "Saving...");
+                        net.execute(() -> {
                         try {
                             JSONObject b = new JSONObject();
                             if (!latest.getText().toString().isEmpty()) b.put("latestVersion", latest.getText().toString());
@@ -1244,9 +1343,12 @@ public class AdminMainActivity extends AppCompatActivity {
                                 render();
                             });
                         } catch (Exception e) {
-                            main.post(() -> Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                            main.post(() -> {
+                                failIdle(save);
+                                Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                            });
                         }
-                    }));
+                    });});
                     content.addView(f);
                     content.addView(save);
                 });
