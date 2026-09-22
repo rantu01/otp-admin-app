@@ -101,7 +101,7 @@ public final class AdminApi {
         HttpURLConnection conn = (HttpURLConnection) new URL(AdminSession.getBase(ctx) + path).openConnection();
         conn.setRequestMethod("POST");
         conn.setConnectTimeout(30000);
-        conn.setReadTimeout(60000);
+        conn.setReadTimeout(180000);
         conn.setDoOutput(true);
         conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
         String t = AdminSession.getToken(ctx);
