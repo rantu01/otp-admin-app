@@ -1561,11 +1561,21 @@ public class AdminMainActivity extends AppCompatActivity {
                     c.close();
                 }
             } catch (Exception ignored) {}
-            if (name == null || !name.toLowerCase().endsWith(".apk")) {
+        if (name == null || !name.toLowerCase().endsWith(".apk")) {
+            String mimeType = null;
+            try { mimeType = getContentResolver().getType(uri); } catch (Exception ignored) {}
+            boolean mimeOk = "application/vnd.android.package-archive".equals(mimeType)
+                    || "application/octet-stream".equals(mimeType);
+            if (!mimeOk) {
                 Toast.makeText(this, "Only .apk files are accepted", Toast.LENGTH_SHORT).show();
                 pickedApkPath = null; pickedApkName = null;
                 return;
             }
+            if (name == null) {
+                name = uri.getLastPathSegment();
+                if (name == null || name.isEmpty()) name = "update.apk";
+            }
+        }
             try {
                 java.io.File cache = new java.io.File(getCacheDir(), name);
                 java.io.InputStream is = getContentResolver().openInputStream(uri);
