@@ -61,7 +61,9 @@ public class AdminMainActivity extends AppCompatActivity {
     private String tab = "dashboard";
     private int lastPending = 0;
     private JSONArray cachePackages = new JSONArray();
-    private final List<Button> navButtons = new ArrayList<>();
+    private static final int REQ_PICK_APK = 9003;
+    private String pickedApkPath = null;
+    private String pickedApkName = null;
     // Table View / Card View toggle (payments + users + withdrawals). Persists per session.
     private String payViewMode = "card";
 
@@ -95,7 +97,7 @@ public class AdminMainActivity extends AppCompatActivity {
         Button refreshBtn = findViewById(R.id.refreshBtn);
         Button logoutBtn = findViewById(R.id.logoutBtn);
         LinearLayout nav = findViewById(R.id.navRow);
-        String[] tabs = {"dashboard", "profit", "withdraw", "payments", "recvpay", "users", "packages", "methods", "versions"};
+        String[] tabs = {"dashboard", "profit", "withdraw", "payments", "recvpay", "users", "packages", "methods", "versions", "updates"};
         for (String t : tabs) {
             Button b = new Button(this);
             b.setText(t.toUpperCase());
@@ -233,6 +235,7 @@ public class AdminMainActivity extends AppCompatActivity {
             case "packages": renderPackages(); break;
             case "methods": renderMethods(); break;
             case "versions": renderVersions(); break;
+            case "updates": renderUpdates(); break;
             default: renderDashboard(); break;
         }
     }
@@ -1334,77 +1337,174 @@ public class AdminMainActivity extends AppCompatActivity {
         });
     }
 
-    // ---------------- versions ----------------
-    private void renderVersions() {
+    // ---------------- app updates (APK upload + release management) ----------------
+
+    private void renderUpdates() {
         net.execute(() -> {
             try {
-                AdminApi.Resp r = AdminApi.get(this, "/api/admin/versions");
-                if (!r.ok()) throw new Exception(r.json.optString("error", "Failed"));
-                JSONArray arr = r.json.optJSONArray("versions");
-                if (arr == null) arr = new JSONArray();
-                final JSONArray list = arr;
+                AdminApi.Resp r = AdminApi.get(this, "/api/app-update/history");
+                JSONArray list = r.ok() ? r.json.optJSONArray("releases") : new JSONArray();
+                if (list == null) list = new JSONArray();
+                final JSONArray history = list;
                 main.post(() -> {
                     content.removeAllViews();
-                    for (int i = 0; i < list.length(); i++) {
-                        JSONObject v = list.optJSONObject(i);
-                        content.addView(tv(v.optString("platform") + ": latest " + v.optString("latestVersion")
-                                + ", min " + v.optString("minimumSupportedVersion")
-                                + ", required=" + v.optBoolean("updateRequired")
-                                + "\nURL: " + v.optString("updateUrl")
-                                + "\n" + v.optString("message")));
-                    }
-                    JSONObject current = null;
-                    for (int i = 0; i < list.length(); i++) {
-                        JSONObject candidate = list.optJSONObject(i);
-                        if (candidate != null && "android".equalsIgnoreCase(candidate.optString("platform"))) {
-                            current = candidate;
-                            break;
-                        }
-                    }
-                    final JSONObject currentVersion = current;
-                    LinearLayout f = new LinearLayout(this);
-                    f.setOrientation(LinearLayout.VERTICAL);
-                    EditText latest = new EditText(this); latest.setHint("Latest version (x.y.z)"); latest.setText(currentVersion == null ? "" : currentVersion.optString("latestVersion"));
-                    EditText code = new EditText(this); code.setHint("Latest versionCode"); code.setInputType(InputType.TYPE_CLASS_NUMBER); code.setText(currentVersion == null ? "" : String.valueOf(currentVersion.optInt("latestVersionCode", 1)));
-                    EditText min = new EditText(this); min.setHint("Minimum supported (x.y.z)"); min.setText(currentVersion == null ? "" : currentVersion.optString("minimumSupportedVersion"));
-                    EditText url = new EditText(this); url.setHint("HTTPS APK or release URL"); url.setText(currentVersion == null ? "" : currentVersion.optString("updateUrl"));
-                    EditText msg = new EditText(this); msg.setHint("Update message"); msg.setText(currentVersion == null ? "" : currentVersion.optString("message"));
-                    CheckBox required = new CheckBox(this); required.setText("Require update for older versions"); required.setChecked(currentVersion != null && currentVersion.optBoolean("updateRequired", false));
-                    f.addView(latest); f.addView(min); f.addView(url); f.addView(msg);
-                    f.addView(code); f.addView(required);
-                    Button save = btn("Save android version");
-                    save.setOnClickListener(v -> {
-                        UiBusy.setBusy(save, "Saving...");
-                        net.execute(() -> {
+                    // Upload form card
+                    LinearLayout card = new LinearLayout(this);
+                    card.setOrientation(LinearLayout.VERTICAL);
+                    styleCard(card);
+                    TextView h = new TextView(this);
+                    h.setText("Publish New Update");
+                    h.setTypeface(null, android.graphics.Typeface.BOLD);
+                    h.setTextSize(16);
+                    card.addView(h);
+
+                    EditText vName = new EditText(this); vName.setHint("Version Name (e.g. V5)");
+                    EditText vCode = new EditText(this); vCode.setHint("Version Code (integer)"); vCode.setInputType(InputType.TYPE_CLASS_NUMBER);
+                    EditText notes = new EditText(this); notes.setHint("Release notes (optional)");
+                    LinearLayout reqRow = new LinearLayout(this); reqRow.setOrientation(LinearLayout.HORIZONTAL);
+                    CheckBox reqCb = new CheckBox(this); reqCb.setText("Update Required");
+                    reqRow.addView(reqCb);
+                    Button pickBtn = btn("Select APK");
+                    styleNeutral(pickBtn);
+                    pickBtn.setOnClickListener(v -> {
+                        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+                        intent.setType("application/vnd.android.package-archive");
+                        intent.addCategory(Intent.CATEGORY_OPENABLE);
                         try {
-                            JSONObject b = new JSONObject();
-                            if (!latest.getText().toString().isEmpty()) b.put("latestVersion", latest.getText().toString());
-                            if (!code.getText().toString().isEmpty()) b.put("latestVersionCode", Integer.parseInt(code.getText().toString()));
-                            if (!min.getText().toString().isEmpty()) b.put("minimumSupportedVersion", min.getText().toString());
-                            b.put("updateUrl", url.getText().toString());
-                            b.put("message", msg.getText().toString());
-                            b.put("updateRequired", required.isChecked());
-                            AdminApi.Resp rr = AdminApi.put(this, "/api/admin/versions/android", b);
-                            main.post(() -> {
-                                Toast.makeText(this, rr.ok() ? "Saved" : rr.json.optString("error", "Failed"), Toast.LENGTH_SHORT).show();
-                                render();
-                            });
+                            startActivityForResult(Intent.createChooser(intent, "Select APK"), REQ_PICK_APK);
                         } catch (Exception e) {
-                            main.post(() -> {
-                                failIdle(save);
-                                Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                            });
+                            Toast.makeText(this, "No file picker available", Toast.LENGTH_SHORT).show();
                         }
-                    });});
-                    content.addView(f);
-                    content.addView(save);
+                    });
+                    TextView pickedView = new TextView(this); pickedView.setText("No APK selected"); pickedView.setTextSize(12);
+
+                    card.addView(vName); card.addView(vCode); card.addView(notes);
+                    card.addView(reqRow); card.addView(pickBtn); card.addView(pickedView);
+                    content.addView(card);
+
+                    Button publishBtn = btn("Publish Update");
+                    styleApprove(publishBtn);
+                    publishBtn.setOnClickListener(v -> {
+                        String name = vName.getText().toString().trim();
+                        String codeStr = vCode.getText().toString().trim();
+                        if (pickedApkPath == null || pickedApkPath.isEmpty()) {
+                            Toast.makeText(this, "Select an APK file first", Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+                        if (name.isEmpty()) { Toast.makeText(this, "Version Name is required", Toast.LENGTH_SHORT).show(); return; }
+                        if (codeStr.isEmpty()) { Toast.makeText(this, "Version Code is required", Toast.LENGTH_SHORT).show(); return; }
+                        int code;
+                        try { code = Integer.parseInt(codeStr); } catch (Exception e) { Toast.makeText(this, "Version Code must be a number", Toast.LENGTH_SHORT).show(); return; }
+                        if (code < 1) { Toast.makeText(this, "Version Code must be positive", Toast.LENGTH_SHORT).show(); return; }
+                        UiBusy.setBusy(publishBtn, "Publishing...");
+                        net.execute(() -> {
+                            try {
+                                AdminApi.Resp rr = AdminApi.uploadApk(this, "/api/app-update/upload", pickedApkPath, "apk",
+                                        name, String.valueOf(code), notes.getText().toString(),
+                                        reqCb.isChecked() ? "true" : "false");
+                                main.post(() -> {
+                                    UiBusy.setIdle(publishBtn);
+                                    if (rr.ok()) {
+                                        Toast.makeText(this, "Update published", Toast.LENGTH_SHORT).show();
+                                        pickedApkPath = null; pickedApkName = null;
+                                        pickedView.setText("No APK selected");
+                                        vName.setText(""); vCode.setText(""); notes.setText("");
+                                        renderUpdates();
+                                    } else {
+                                        Toast.makeText(this, rr.json.optString("error", "Failed"), Toast.LENGTH_LONG).show();
+                                    }
+                                });
+                            } catch (Exception e) {
+                                main.post(() -> { UiBusy.setIdle(publishBtn); Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show(); });
+                            }
+                        });
+                    });
+                    content.addView(publishBtn);
+
+                    // History
+                    if (history.length() == 0) {
+                        content.addView(tv("No releases yet."));
+                        return;
+                    }
+                    content.addView(tv("Release History"));
+                    for (int i = 0; i < history.length(); i++) {
+                        JSONObject rel = history.optJSONObject(i);
+                        LinearLayout rc = new LinearLayout(this);
+                        styleCard(rc);
+                        StringBuilder sb = new StringBuilder();
+                        sb.append(rel.optString("versionName")).append(" · Code: ").append(rel.optInt("versionCode"));
+                        if (rel.has("apkFileName")) sb.append("\nAPK: ").append(rel.optString("apkFileName"));
+                        if (rel.has("releaseNotes") && !rel.optString("releaseNotes", "").isEmpty())
+                            sb.append("\nNotes: ").append(rel.optString("releaseNotes"));
+                        sb.append("\nRequired: ").append(rel.optBoolean("updateRequired") ? "Yes" : "No");
+                        sb.append(" · Status: ").append(rel.optBoolean("isPublished") ? "Published" : "Draft");
+                        if (rel.has("publishedAt") && rel.optString("publishedAt") != null)
+                            sb.append(" · ").append(safeDate(rel.optString("publishedAt")));
+                        TextView tv = new TextView(this); tv.setText(sb.toString()); tv.setTextSize(13);
+                        rc.addView(tv);
+                        LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL);
+                        Button toggle = btn(rel.optBoolean("isPublished") ? "Deactivate" : "Activate");
+                        styleNeutral(toggle);
+                        toggle.setOnClickListener(btnV -> {
+                            UiBusy.setBusy(toggle, "Saving...");
+                            net.execute(() -> {
+                                try {
+                                    JSONObject b = new JSONObject();
+                                    b.put("isPublished", !rel.optBoolean("isPublished"));
+                                    AdminApi.Resp rr = AdminApi.patch(this, "/api/app-update/" + rel.optInt("versionCode"), b);
+                                    main.post(() -> {
+                                        Toast.makeText(this, rr.ok() ? "Saved" : rr.json.optString("error", "Failed"), Toast.LENGTH_SHORT).show();
+                                        renderUpdates();
+                                    });
+                                } catch (Exception e) { main.post(() -> { failIdle(toggle); Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show(); }); }
+                            });
+                        });
+                        row.addView(toggle);
+                        rc.addView(row);
+                        content.addView(rc);
+                    }
                 });
             } catch (Exception e) {
-                main.post(() -> {
-                    content.removeAllViews();
-                    content.addView(tv("Offline: " + e.getMessage()));
-                });
+                main.post(() -> { content.removeAllViews(); content.addView(tv("Offline: " + e.getMessage())); });
             }
         });
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_PICK_APK && resultCode == RESULT_OK && data != null) {
+            android.net.Uri uri = data.getData();
+            if (uri == null) return;
+            String name = null;
+            try {
+                android.content.Cursor c = getContentResolver().query(uri, null, null, null, null);
+                if (c != null) {
+                    int ni = c.getColumnIndex(android.provider.MediaStore.MediaColumns.DISPLAY_NAME);
+                    if (ni >= 0) name = c.getString(ni);
+                    c.close();
+                }
+            } catch (Exception ignored) {}
+            if (name == null || !name.toLowerCase().endsWith(".apk")) {
+                Toast.makeText(this, "Only .apk files are accepted", Toast.LENGTH_SHORT).show();
+                pickedApkPath = null; pickedApkName = null;
+                return;
+            }
+            try {
+                java.io.File cache = new java.io.File(getCacheDir(), name);
+                java.io.InputStream is = getContentResolver().openInputStream(uri);
+                java.io.FileOutputStream fos = new java.io.FileOutputStream(cache);
+                byte[] buf = new byte[8192];
+                int r;
+                while ((r = is.read(buf)) != -1) fos.write(buf, 0, r);
+                is.close(); fos.close();
+                pickedApkPath = cache.getAbsolutePath();
+                pickedApkName = name;
+                Toast.makeText(this, "Selected: " + name, Toast.LENGTH_SHORT).show();
+            } catch (Exception e) {
+                Toast.makeText(this, "Failed to read file: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                pickedApkPath = null; pickedApkName = null;
+            }
+        }
     }
 }

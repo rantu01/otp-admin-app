@@ -10,6 +10,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -82,5 +84,11 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: build/outputs/apk/**/*.apk
-          generate_release_notes: true
+          name: OTP Admin ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          files: build/outputs/apk/release/*.apk
+          fail_on_unmatched_files: true
+          body: |
+            Download the APK below and install it on Android.
+
+            The APK is the only release asset provided by this workflow.
