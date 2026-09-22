@@ -10,6 +10,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
     steps:
       - name: Checkout code
@@ -46,19 +51,36 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Build admin debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+      - name: Decode persistent release keystore
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ env.ANDROID_KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/otp-release.jks"
+
+      - name: Build signed admin release APK
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/otp-release.jks
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Require persistent release signing
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 == '' }}
+        run: |
+          echo "Missing ANDROID_KEYSTORE_BASE64 and release signing secrets."
+          echo "Refusing to publish a debug-signed APK because it cannot reliably update an installed build."
+          exit 1
 
       - name: Upload admin APK
         uses: actions/upload-artifact@v4
         with:
           name: otp-admin-apk
-          path: build/outputs/apk/debug/*.apk
+          path: build/outputs/apk/**/*.apk
           if-no-files-found: error
 
       - name: Attach APK to GitHub Release (tags only)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: build/outputs/apk/debug/*.apk
+          files: build/outputs/apk/**/*.apk
           generate_release_notes: true
