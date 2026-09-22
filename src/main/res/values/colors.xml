@@ -1,21 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Restrained operations palette -->
-    <color name="screen_bg">#F5F7FB</color>
+    <color name="screen_bg">#F8FAFC</color>
     <color name="card_bg">#FFFFFF</color>
-    <color name="title_text">#172033</color>
+    <color name="title_text">#0F172A</color>
     <color name="muted_text">#6B7280</color>
     <color name="stroke">#D8DFEC</color>
-    <color name="accent_blue">#3157C7</color>
+    <color name="accent_blue">#3B49DF</color>
     <color name="accent_pink">#C54B78</color>
-    <color name="accent_teal">#087F8C</color>
-    <color name="info_bg">#EEF3FF</color>
-    <color name="success">#087A52</color>
-    <color name="error">#B42318</color>
-    <color name="danger">#B42318</color>
-    <color name="header_start">#243B8F</color>
-    <color name="header_end">#3157C7</color>
-    <color name="tab_active">#3157C7</color>
+    <color name="accent_teal">#00897B</color>
+    <color name="info_bg">#EFF4FF</color>
+    <color name="success">#059669</color>
+    <color name="error">#DC2626</color>
+    <color name="danger">#DC2626</color>
+    <color name="header_start">#2E38A8</color>
+    <color name="header_end">#3B49DF</color>
+    <color name="tab_active">#3B49DF</color>
     <color name="input_hint">#8A8F98</color>
 
     <!-- Text on bright tinted buttons: white in light mode (dark text in night mode) -->

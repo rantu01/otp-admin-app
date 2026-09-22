@@ -6,9 +6,9 @@ A quiet operations console optimized for scanning and decisions. Use deep cobalt
 
 ## Tokens
 
-- Brand: `header_start` / `#243B8F`, `accent_blue` / `#3157C7`, `tab_active` / `#3157C7`.
-- Canvas and surfaces: `screen_bg` / `#F5F7FB`, `card_bg` / `#FFFFFF`, `info_bg` / `#EEF3FF`.
-- Text: `title_text` / `#172033`, `muted_text` / `#6B7280`, `stroke` / `#D8DFEC`.
+- Brand: `header_start` / `#2E38A8`, `accent_blue` / `#3B49DF`, `tab_active` / `#3B49DF`.
+- Canvas and surfaces: `screen_bg` / `#F8FAFC`, `card_bg` / `#FFFFFF`, `info_bg` / `#EFF4FF`.
+- Text: `title_text` / `#0F172A`, `muted_text` / `#6B7280`, `stroke` / `#D8DFEC`.
 - Status: `pill_pending_*` for review queues, `pill_ok_*` for confirmed states, `pill_bad_*` for rejected or blocked states.
 
 ## Type, spacing, and layout

@@ -20,6 +20,7 @@ import android.os.Vibrator;
 import android.text.InputType;
 import android.util.TypedValue;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -1352,13 +1353,25 @@ public class AdminMainActivity extends AppCompatActivity {
                                 + "\nURL: " + v.optString("updateUrl")
                                 + "\n" + v.optString("message")));
                     }
+                    JSONObject current = null;
+                    for (int i = 0; i < list.length(); i++) {
+                        JSONObject candidate = list.optJSONObject(i);
+                        if (candidate != null && "android".equalsIgnoreCase(candidate.optString("platform"))) {
+                            current = candidate;
+                            break;
+                        }
+                    }
+                    final JSONObject currentVersion = current;
                     LinearLayout f = new LinearLayout(this);
                     f.setOrientation(LinearLayout.VERTICAL);
-                    EditText latest = new EditText(this); latest.setHint("Latest (1.5.0)");
-                    EditText min = new EditText(this); min.setHint("Minimum (1.3.0)");
-                    EditText url = new EditText(this); url.setHint("Update URL");
-                    EditText msg = new EditText(this); msg.setHint("Message");
+                    EditText latest = new EditText(this); latest.setHint("Latest version (x.y.z)"); latest.setText(currentVersion == null ? "" : currentVersion.optString("latestVersion"));
+                    EditText code = new EditText(this); code.setHint("Latest versionCode"); code.setInputType(InputType.TYPE_CLASS_NUMBER); code.setText(currentVersion == null ? "" : String.valueOf(currentVersion.optInt("latestVersionCode", 1)));
+                    EditText min = new EditText(this); min.setHint("Minimum supported (x.y.z)"); min.setText(currentVersion == null ? "" : currentVersion.optString("minimumSupportedVersion"));
+                    EditText url = new EditText(this); url.setHint("HTTPS APK or release URL"); url.setText(currentVersion == null ? "" : currentVersion.optString("updateUrl"));
+                    EditText msg = new EditText(this); msg.setHint("Update message"); msg.setText(currentVersion == null ? "" : currentVersion.optString("message"));
+                    CheckBox required = new CheckBox(this); required.setText("Require update for older versions"); required.setChecked(currentVersion != null && currentVersion.optBoolean("updateRequired", false));
                     f.addView(latest); f.addView(min); f.addView(url); f.addView(msg);
+                    f.addView(code); f.addView(required);
                     Button save = btn("Save android version");
                     save.setOnClickListener(v -> {
                         UiBusy.setBusy(save, "Saving...");
@@ -1366,9 +1379,11 @@ public class AdminMainActivity extends AppCompatActivity {
                         try {
                             JSONObject b = new JSONObject();
                             if (!latest.getText().toString().isEmpty()) b.put("latestVersion", latest.getText().toString());
+                            if (!code.getText().toString().isEmpty()) b.put("latestVersionCode", Integer.parseInt(code.getText().toString()));
                             if (!min.getText().toString().isEmpty()) b.put("minimumSupportedVersion", min.getText().toString());
                             b.put("updateUrl", url.getText().toString());
                             b.put("message", msg.getText().toString());
+                            b.put("updateRequired", required.isChecked());
                             AdminApi.Resp rr = AdminApi.put(this, "/api/admin/versions/android", b);
                             main.post(() -> {
                                 Toast.makeText(this, rr.ok() ? "Saved" : rr.json.optString("error", "Failed"), Toast.LENGTH_SHORT).show();
