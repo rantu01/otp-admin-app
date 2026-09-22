@@ -243,7 +243,7 @@ public class AdminMainActivity extends AppCompatActivity {
     /** Theme-aware card: uses @drawable/bg_card so light/dark both keep contrast. */
     private void styleCard(LinearLayout card) {
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(16), dp(16), dp(16), dp(16));
+        card.setPadding(dp(18), dp(18), dp(18), dp(18));
         card.setBackground(ContextCompat.getDrawable(this, R.drawable.bg_card));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -255,6 +255,7 @@ public class AdminMainActivity extends AppCompatActivity {
         TextView t = new TextView(this);
         t.setText(s);
         t.setTextSize(14);
+        t.setLineSpacing(0, 1.12f);
         t.setTextColor(ContextCompat.getColor(this, R.color.title_text));
         t.setPadding(dp(16), dp(16), dp(16), dp(16));
         t.setBackground(ContextCompat.getDrawable(this, R.drawable.bg_card));
@@ -271,6 +272,9 @@ public class AdminMainActivity extends AppCompatActivity {
         b.setTextSize(12);
         b.setMinHeight(dp(48));
         b.setAllCaps(false);
+        b.setPadding(dp(16), 0, dp(16), 0);
+        b.setTextColor(ContextCompat.getColor(this, R.color.title_text));
+        b.setBackgroundTintList(ContextCompat.getColorStateList(this, R.color.info_bg));
         return b;
     }
 

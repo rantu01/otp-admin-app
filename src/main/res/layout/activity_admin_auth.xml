@@ -51,7 +51,7 @@
             android:background="@drawable/bg_card"
             android:elevation="6dp"
             android:orientation="vertical"
-            android:padding="22dp">
+            android:padding="24dp">
 
             <TextView
                 android:layout_width="wrap_content"
