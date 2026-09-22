@@ -8,6 +8,7 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.graphics.drawable.GradientDrawable;
 import android.media.RingtoneManager;
 import android.net.Uri;
@@ -61,6 +62,7 @@ public class AdminMainActivity extends AppCompatActivity {
     private String tab = "dashboard";
     private int lastPending = 0;
     private JSONArray cachePackages = new JSONArray();
+    private final List<Button> navButtons = new ArrayList<>();
     private static final int REQ_PICK_APK = 9003;
     private String pickedApkPath = null;
     private String pickedApkName = null;
@@ -1332,6 +1334,80 @@ public class AdminMainActivity extends AppCompatActivity {
                 main.post(() -> {
                     failIdle(src);
                     Toast.makeText(this, "Offline: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                });
+            }
+        });
+    }
+
+    // ---------------- versions ----------------
+    private void renderVersions() {
+        net.execute(() -> {
+            try {
+                AdminApi.Resp r = AdminApi.get(this, "/api/admin/versions");
+                if (!r.ok()) throw new Exception(r.json.optString("error", "Failed"));
+                JSONArray arr = r.json.optJSONArray("versions");
+                if (arr == null) arr = new JSONArray();
+                final JSONArray list = arr;
+                main.post(() -> {
+                    content.removeAllViews();
+                    for (int i = 0; i < list.length(); i++) {
+                        JSONObject v = list.optJSONObject(i);
+                        content.addView(tv(v.optString("platform") + ": latest " + v.optString("latestVersion")
+                                + ", min " + v.optString("minimumSupportedVersion")
+                                + ", required=" + v.optBoolean("updateRequired")
+                                + "\nURL: " + v.optString("updateUrl")
+                                + "\n" + v.optString("message")));
+                    }
+                    JSONObject current = null;
+                    for (int i = 0; i < list.length(); i++) {
+                        JSONObject candidate = list.optJSONObject(i);
+                        if (candidate != null && "android".equalsIgnoreCase(candidate.optString("platform"))) {
+                            current = candidate;
+                            break;
+                        }
+                    }
+                    final JSONObject currentVersion = current;
+                    LinearLayout f = new LinearLayout(this);
+                    f.setOrientation(LinearLayout.VERTICAL);
+                    EditText latest = new EditText(this); latest.setHint("Latest version (x.y.z)"); latest.setText(currentVersion == null ? "" : currentVersion.optString("latestVersion"));
+                    EditText code = new EditText(this); code.setHint("Latest versionCode"); code.setInputType(InputType.TYPE_CLASS_NUMBER); code.setText(currentVersion == null ? "" : String.valueOf(currentVersion.optInt("latestVersionCode", 1)));
+                    EditText min = new EditText(this); min.setHint("Minimum supported (x.y.z)"); min.setText(currentVersion == null ? "" : currentVersion.optString("minimumSupportedVersion"));
+                    EditText url = new EditText(this); url.setHint("HTTPS APK or release URL"); url.setText(currentVersion == null ? "" : currentVersion.optString("updateUrl"));
+                    EditText msg = new EditText(this); msg.setHint("Update message"); msg.setText(currentVersion == null ? "" : currentVersion.optString("message"));
+                    CheckBox required = new CheckBox(this); required.setText("Require update for older versions"); required.setChecked(currentVersion != null && currentVersion.optBoolean("updateRequired", false));
+                    f.addView(latest); f.addView(min); f.addView(url); f.addView(msg);
+                    f.addView(code); f.addView(required);
+                    Button save = btn("Save android version");
+                    save.setOnClickListener(v -> {
+                        UiBusy.setBusy(save, "Saving...");
+                        net.execute(() -> {
+                        try {
+                            JSONObject b = new JSONObject();
+                            if (!latest.getText().toString().isEmpty()) b.put("latestVersion", latest.getText().toString());
+                            if (!code.getText().toString().isEmpty()) b.put("latestVersionCode", Integer.parseInt(code.getText().toString()));
+                            if (!min.getText().toString().isEmpty()) b.put("minimumSupportedVersion", min.getText().toString());
+                            b.put("updateUrl", url.getText().toString());
+                            b.put("message", msg.getText().toString());
+                            b.put("updateRequired", required.isChecked());
+                            AdminApi.Resp rr = AdminApi.put(this, "/api/admin/versions/android", b);
+                            main.post(() -> {
+                                Toast.makeText(this, rr.ok() ? "Saved" : rr.json.optString("error", "Failed"), Toast.LENGTH_SHORT).show();
+                                render();
+                            });
+                        } catch (Exception e) {
+                            main.post(() -> {
+                                failIdle(save);
+                                Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                            });
+                        }
+                    });});
+                    content.addView(f);
+                    content.addView(save);
+                });
+            } catch (Exception e) {
+                main.post(() -> {
+                    content.removeAllViews();
+                    content.addView(tv("Offline: " + e.getMessage()));
                 });
             }
         });
