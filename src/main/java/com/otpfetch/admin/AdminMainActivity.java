@@ -1554,7 +1554,7 @@ public class AdminMainActivity extends AppCompatActivity {
             if (uri == null) return;
             String name = null;
             try {
-                android.content.Cursor c = getContentResolver().query(uri, null, null, null, null);
+                Cursor c = getContentResolver().query(uri, null, null, null, null);
                 if (c != null) {
                     int ni = c.getColumnIndex(android.provider.MediaStore.MediaColumns.DISPLAY_NAME);
                     if (ni >= 0) name = c.getString(ni);
