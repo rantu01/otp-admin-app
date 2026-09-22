@@ -9,7 +9,7 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@drawable/bg_header_gradient"
+        android:background="@color/header_start"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:padding="18dp">
@@ -33,7 +33,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:text="Backend console · re-fetch to sync"
+                android:text="Operations · live backend data"
                 android:textColor="#E6FFFFFF"
                 android:textSize="12sp" />
         </LinearLayout>

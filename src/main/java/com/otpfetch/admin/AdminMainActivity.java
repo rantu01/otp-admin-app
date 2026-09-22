@@ -219,7 +219,7 @@ public class AdminMainActivity extends AppCompatActivity {
     // ---------------- rendering ----------------
     private void render() {
         content.removeAllViews();
-        headerView.setText("NesaAdmin · " + tab.toUpperCase() + " · " + AdminSession.getBase(this));
+        headerView.setText("NesaAdmin · " + tab.toUpperCase());
         TextView loading = new TextView(this);
         loading.setText("Loading...");
         content.addView(loading);
@@ -255,6 +255,7 @@ public class AdminMainActivity extends AppCompatActivity {
         TextView t = new TextView(this);
         t.setText(s);
         t.setTextSize(14);
+        t.setTextColor(ContextCompat.getColor(this, R.color.title_text));
         t.setPadding(dp(16), dp(16), dp(16), dp(16));
         t.setBackground(ContextCompat.getDrawable(this, R.drawable.bg_card));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
@@ -268,7 +269,23 @@ public class AdminMainActivity extends AppCompatActivity {
         Button b = new Button(this);
         b.setText(s);
         b.setTextSize(12);
+        b.setMinHeight(dp(48));
+        b.setAllCaps(false);
         return b;
+    }
+
+    private TextView metric(String label, String value) {
+        TextView m = new TextView(this);
+        m.setText(label + "\n" + value);
+        m.setTextColor(ContextCompat.getColor(this, R.color.title_text));
+        m.setTextSize(15);
+        m.setTypeface(null, android.graphics.Typeface.BOLD);
+        m.setPadding(dp(14), dp(14), dp(14), dp(14));
+        m.setBackground(ContextCompat.getDrawable(this, R.drawable.bg_card));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1);
+        lp.setMargins(0, 0, dp(8), dp(8));
+        m.setLayoutParams(lp);
+        return m;
     }
 
     /** Active tab = filled primary, inactive = card surface with primary text. */
@@ -369,14 +386,20 @@ public class AdminMainActivity extends AppCompatActivity {
                 JSONObject profit = r.json.optJSONObject("profit");
                 main.post(() -> {
                     content.removeAllViews();
-                    content.addView(tv("Total Payments: " + s.optInt("totalPayments")
-                            + "\nPending: " + s.optInt("pending")
-                            + "\nApproved: " + s.optInt("approved")
-                            + "\nRejected: " + s.optInt("rejected")
-                            + "\nApproved Revenue: ৳" + s.optInt("approvedRevenue")
-                            + "\nActive Subscriptions: " + s.optInt("activeSubscriptions")
-                            + "\nExpired: " + s.optInt("expiredSubscriptions")
-                            + "\nTotal Users: " + s.optInt("totalUsers")));
+                    LinearLayout metrics = new LinearLayout(this);
+                    metrics.setOrientation(LinearLayout.HORIZONTAL);
+                    metrics.addView(metric("Pending payments", String.valueOf(s.optInt("pending"))));
+                    metrics.addView(metric("Approved revenue", "৳" + s.optInt("approvedRevenue")));
+                    content.addView(metrics);
+                    LinearLayout metrics2 = new LinearLayout(this);
+                    metrics2.setOrientation(LinearLayout.HORIZONTAL);
+                    metrics2.addView(metric("Active subscriptions", String.valueOf(s.optInt("activeSubscriptions"))));
+                    metrics2.addView(metric("Total users", String.valueOf(s.optInt("totalUsers"))));
+                    content.addView(metrics2);
+                    content.addView(tv("Payments\nTotal: " + s.optInt("totalPayments")
+                        + "  ·  Approved: " + s.optInt("approved")
+                        + "  ·  Rejected: " + s.optInt("rejected")
+                        + "\nExpired subscriptions: " + s.optInt("expiredSubscriptions")));
                     if (profit != null) content.addView(tv(profitSummaryText(profit)));
                     lastPending = s.optInt("pending", lastPending);
                     pendingBadge.setText("Pending: " + s.optInt("pending"));
@@ -633,7 +656,12 @@ public class AdminMainActivity extends AppCompatActivity {
                         if ("PENDING".equals(p.optString("status"))) {
                             Button a = btn("Approve");
                             styleApprove(a);
-                            a.setOnClickListener(v -> confirm("Approve payment #" + p.optInt("id") + "?", () -> review(a, p.optInt("id"), true, null)));
+                                String approvalDetails = "Approve payment #" + p.optInt("id")
+                                    + "?\nUser: " + p.optString("userName")
+                                    + "\nPackage: " + p.optString("packageName")
+                                    + "\nAmount: ৳" + p.optInt("amount")
+                                    + "\nThis will activate or extend the subscription.";
+                                a.setOnClickListener(v -> confirm(approvalDetails, () -> review(a, p.optInt("id"), true, null)));
                             Button rj = btn("Reject");
                             styleReject(rj);
                             rj.setOnClickListener(v -> askReason(rj, p.optInt("id")));

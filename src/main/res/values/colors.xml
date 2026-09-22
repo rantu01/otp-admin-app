@@ -1,26 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Professional admin palette (light) — matches user-app family -->
-    <color name="screen_bg">#EDE7F6</color>
+    <!-- Restrained operations palette -->
+    <color name="screen_bg">#F5F7FB</color>
     <color name="card_bg">#FFFFFF</color>
-    <color name="title_text">#2D2A4A</color>
+    <color name="title_text">#172033</color>
     <color name="muted_text">#6B7280</color>
-    <color name="stroke">#E2E0F0</color>
-    <color name="accent_blue">#6C3CE0</color>
-    <color name="accent_pink">#E040FB</color>
-    <color name="info_bg">#F3EFFF</color>
-    <color name="success">#00A152</color>
-    <color name="error">#E53935</color>
-    <color name="danger">#E53935</color>
-    <color name="header_start">#7C4DFF</color>
-    <color name="header_end">#E040FB</color>
-    <color name="tab_active">#6C3CE0</color>
+    <color name="stroke">#D8DFEC</color>
+    <color name="accent_blue">#3157C7</color>
+    <color name="accent_pink">#C54B78</color>
+    <color name="accent_teal">#087F8C</color>
+    <color name="info_bg">#EEF3FF</color>
+    <color name="success">#087A52</color>
+    <color name="error">#B42318</color>
+    <color name="danger">#B42318</color>
+    <color name="header_start">#243B8F</color>
+    <color name="header_end">#3157C7</color>
+    <color name="tab_active">#3157C7</color>
     <color name="input_hint">#8A8F98</color>
 
     <!-- Text on bright tinted buttons: white in light mode (dark text in night mode) -->
     <color name="on_tint">#FFFFFF</color>
-    <!-- Login button: same purple as before in light, deepened at night -->
-    <color name="btn_primary">#6C3CE0</color>
+    <color name="btn_primary">#3157C7</color>
     <color name="ic_launcher_background">#000000</color>
 
     <!-- Status pills -->
