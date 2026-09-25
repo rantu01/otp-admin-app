@@ -99,7 +99,7 @@ public class AdminMainActivity extends AppCompatActivity {
         Button refreshBtn = findViewById(R.id.refreshBtn);
         Button logoutBtn = findViewById(R.id.logoutBtn);
         LinearLayout nav = findViewById(R.id.navRow);
-        String[] tabs = {"dashboard", "profit", "withdraw", "payments", "recvpay", "users", "packages", "methods", "versions", "updates"};
+        String[] tabs = {"dashboard", "profit", "withdraw", "payments", "recvpay", "users", "referrals", "packages", "methods", "versions", "updates"};
         for (String t : tabs) {
             Button b = new Button(this);
             b.setText(t.toUpperCase());
@@ -234,6 +234,7 @@ public class AdminMainActivity extends AppCompatActivity {
             case "profit": renderProfit(); break;
             case "withdraw": renderWithdraw(); break;
             case "users": renderUsers(""); break;
+            case "referrals": renderReferrals(1, "", ""); break;
             case "packages": renderPackages(); break;
             case "methods": renderMethods(); break;
             case "versions": renderVersions(); break;
@@ -816,6 +817,110 @@ public class AdminMainActivity extends AppCompatActivity {
                 main.post(() -> {
                     content.removeAllViews();
                     content.addView(tv("Offline: " + e.getMessage()));
+                });
+            }
+        });
+    }
+
+    private void renderReferrals(int page, String status, String search) {
+        net.execute(() -> {
+            try {
+                String query = AdminApi.qs("page", String.valueOf(page), "limit", "20", "status", status, "search", search);
+                AdminApi.Resp statsResp = AdminApi.get(this, "/api/admin/referrals/stats");
+                AdminApi.Resp listResp = AdminApi.get(this, "/api/admin/referrals?" + query);
+                if (!statsResp.ok() || !listResp.ok()) throw new Exception(listResp.json.optString("error", "Failed to load referrals"));
+                JSONObject stats = statsResp.json.optJSONObject("stats");
+                JSONArray rows = listResp.json.optJSONArray("referrals");
+                if (rows == null) rows = new JSONArray();
+                final JSONArray list = rows;
+                final int total = listResp.json.optInt("total", 0);
+                final boolean hasMore = listResp.json.optBoolean("hasMore", false);
+                main.post(() -> {
+                    content.removeAllViews();
+                    content.addView(tv("Referral management"));
+                    LinearLayout metrics = new LinearLayout(this);
+                    metrics.setOrientation(LinearLayout.HORIZONTAL);
+                    metrics.addView(metric("Users", String.valueOf(stats == null ? 0 : stats.optInt("totalUsers"))));
+                    metrics.addView(metric("Joined", String.valueOf(stats == null ? 0 : stats.optInt("joinedThroughReferrals"))));
+                    content.addView(metrics);
+                    LinearLayout metrics2 = new LinearLayout(this);
+                    metrics2.setOrientation(LinearLayout.HORIZONTAL);
+                    metrics2.addView(metric("Successful", String.valueOf(stats == null ? 0 : stats.optInt("successfulReferrals"))));
+                    metrics2.addView(metric("Free days", String.valueOf(stats == null ? 0 : stats.optInt("totalFreeDaysDistributed"))));
+                    content.addView(metrics2);
+                    if (stats != null) {
+                        JSONArray top = stats.optJSONArray("topReferrers");
+                        if (top != null && top.length() > 0) {
+                            StringBuilder topText = new StringBuilder("Top referrers\n");
+                            for (int i = 0; i < top.length(); i++) {
+                                JSONObject topUser = top.optJSONObject(i);
+                                if (topUser != null) topText.append(i + 1).append(". ")
+                                        .append(topUser.optString("name", "—"))
+                                        .append(" — ").append(topUser.optInt("successfulReferralCount", 0)).append(" verified\n");
+                            }
+                            content.addView(tv(topText.toString()));
+                        }
+                    }
+
+                    LinearLayout tools = new LinearLayout(this);
+                    tools.setOrientation(LinearLayout.HORIZONTAL);
+                    EditText searchInput = new EditText(this);
+                    searchInput.setHint("Search referrals");
+                    searchInput.setText(search);
+                    searchInput.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+                    Button searchBtn = btn("Search");
+                    searchBtn.setOnClickListener(v -> renderReferrals(1, status, searchInput.getText().toString().trim()));
+                    tools.addView(searchInput);
+                    tools.addView(searchBtn);
+                    content.addView(tools);
+
+                    LinearLayout filters = new LinearLayout(this);
+                    filters.setOrientation(LinearLayout.HORIZONTAL);
+                    for (String option : new String[]{"", "pending", "verified", "rewarded", "rejected"}) {
+                        Button filter = btn(option.isEmpty() ? "All" : option);
+                        if (option.equals(status)) styleApprove(filter);
+                        filter.setOnClickListener(v -> renderReferrals(1, option, search));
+                        filters.addView(filter);
+                    }
+                    content.addView(filters);
+
+                    if (list.length() == 0) content.addView(tv("No referrals match the current filters."));
+                    for (int i = 0; i < list.length(); i++) {
+                        JSONObject row = list.optJSONObject(i);
+                        JSONObject referrer = row == null ? null : row.optJSONObject("referrer");
+                        JSONObject referred = row == null ? null : row.optJSONObject("referred");
+                        LinearLayout card = new LinearLayout(this);
+                        styleCard(card);
+                        TextView details = new TextView(this);
+                        details.setText("Referrer: " + (referrer == null ? "Unknown" : referrer.optString("name", "—"))
+                                + " · Code " + (row == null ? "—" : row.optString("referralCode", "—"))
+                                + "\nReferred: " + (referred == null ? "Unknown" : referred.optString("name", "—"))
+                                + "\nCreated: " + (row == null ? "—" : safeDate(row.optString("createdAt", "")))
+                                + "\nVerified: " + (row == null ? "—" : safeDate(row.optString("verifiedAt", "")))
+                                + "\nRewarded: " + (row != null && row.optBoolean("rewardGranted", false) ? safeDate(row.optString("rewardGrantedAt", "")) : "No")
+                                + "\nStatus: " + (row == null ? "—" : row.optString("status", "—")));
+                        details.setTextSize(14);
+                        card.addView(details);
+                        content.addView(card);
+                    }
+                    LinearLayout paging = new LinearLayout(this);
+                    Button previous = btn("Previous");
+                    previous.setEnabled(page > 1);
+                    previous.setOnClickListener(v -> renderReferrals(page - 1, status, search));
+                    Button next = btn("Next");
+                    next.setEnabled(hasMore);
+                    next.setOnClickListener(v -> renderReferrals(page + 1, status, search));
+                    TextView pageInfo = tv("Page " + page + " · " + total + " total");
+                    pageInfo.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+                    paging.addView(previous);
+                    paging.addView(pageInfo);
+                    paging.addView(next);
+                    content.addView(paging);
+                });
+            } catch (Exception e) {
+                main.post(() -> {
+                    content.removeAllViews();
+                    content.addView(tv("Could not load referrals. Retry when the server is available."));
                 });
             }
         });
